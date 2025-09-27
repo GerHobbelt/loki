@@ -145,7 +145,7 @@
 ### Other Changes
 
 * Skip generating trace info for no-op tracers.
-* The `clientName` paramater in client constructors has been renamed to `moduleName`.
+* The `clientName` parameter in client constructors has been renamed to `moduleName`.
 
 ## 1.9.0-beta.1 (2023-10-05)
 

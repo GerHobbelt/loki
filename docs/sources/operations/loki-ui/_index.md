@@ -30,7 +30,7 @@ Each Loki component now includes the UI service.
 
 When running Loki as a docker container, the UI service is enabled by default. No additional configuration is required. 
 
-For Loki Helm users discoverability of the UI service needs to be enabled in the Loki configuration. To enable the UI discoverability, add the following paramter to the `loki` section of the `values.yaml` file:
+For Loki Helm users discoverability of the UI service needs to be enabled in the Loki configuration. To enable the UI discoverability, add the following parameter to the `loki` section of the `values.yaml` file:
 
 ```yaml
 loki:
@@ -148,7 +148,7 @@ Analyze Labels page allows you to analyze label distribution across your log str
 
    {{< figure max-width="100%" src="/media/docs/loki/loki-ui-analyze-labels.png" caption="Loki UI Analyze Labels" >}}
 
-   Note that if you are using Loki in single binary mode, or have disabled the `auth_enabled` paramater in the Loki config then the Tenant ID will be `fake`.
+   Note that if you are using Loki in single binary mode, or have disabled the `auth_enabled` parameter in the Loki config then the Tenant ID will be `fake`.
 
 2. **Label Distribution**: This provides a visual representation of the label distribution. The labels are displayed in a bar chart:  
 

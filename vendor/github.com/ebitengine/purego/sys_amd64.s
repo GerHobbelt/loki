@@ -61,7 +61,7 @@ TEXT syscall15X(SB), NOSPLIT|NOFRAME, $0
 	MOVQ syscall15Args_a5(R11), R8 // a5
 	MOVQ syscall15Args_a6(R11), R9 // a6
 
-	// push the remaining paramters onto the stack
+	// push the remaining parameters onto the stack
 	MOVQ syscall15Args_a7(R11), R12
 	MOVQ R12, 0(SP)                  // push a7
 	MOVQ syscall15Args_a8(R11), R12
