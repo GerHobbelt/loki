@@ -14,7 +14,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/loki/v3/pkg/kafka"
-	"github.com/grafana/loki/v3/pkg/limits/internal/testutil"
 	"github.com/grafana/loki/v3/pkg/limits/proto"
 )
 
@@ -26,13 +25,13 @@ func TestIngestLimits_ExceedsLimits(t *testing.T) {
 		name string
 
 		// Setup data.
-		assignedPartitionIDs []int32
-		numPartitions        int
-		metadata             *streamMetadata
-		windowSize           time.Duration
-		rateWindow           time.Duration
-		bucketDuration       time.Duration
-		maxActiveStreams     int
+		assignedPartitions []int32
+		numPartitions      int
+		usage              *UsageStore
+		windowSize         time.Duration
+		rateWindow         time.Duration
+		bucketDuration     time.Duration
+		maxActiveStreams   int
 
 		// Request data for ExceedsLimits.
 		tenantID string
@@ -46,11 +45,11 @@ func TestIngestLimits_ExceedsLimits(t *testing.T) {
 		{
 			name: "tenant not found",
 			// setup data
-			assignedPartitionIDs: []int32{0},
-			numPartitions:        1,
-			metadata: &streamMetadata{
-				numPartitions: 1,
-				stripes: []map[string]map[int32]map[uint64]Stream{
+			assignedPartitions: []int32{0},
+			numPartitions:      1,
+			usage: &UsageStore{
+				cfg: Config{NumPartitions: 1},
+				stripes: []map[string]tenantUsage{
 					{
 						"tenant1": {
 							0: {
@@ -81,11 +80,11 @@ func TestIngestLimits_ExceedsLimits(t *testing.T) {
 		{
 			name: "all existing streams still active",
 			// setup data
-			assignedPartitionIDs: []int32{0},
-			numPartitions:        1,
-			metadata: &streamMetadata{
-				numPartitions: 1,
-				stripes: []map[string]map[int32]map[uint64]Stream{
+			assignedPartitions: []int32{0},
+			numPartitions:      1,
+			usage: &UsageStore{
+				cfg: Config{NumPartitions: 1},
+				stripes: []map[string]tenantUsage{
 					{
 						"tenant1": {
 							0: {
@@ -118,11 +117,11 @@ func TestIngestLimits_ExceedsLimits(t *testing.T) {
 		{
 			name: "keep existing active streams and drop new streams",
 			// setup data
-			assignedPartitionIDs: []int32{0},
-			numPartitions:        1,
-			metadata: &streamMetadata{
-				numPartitions: 1,
-				stripes: []map[string]map[int32]map[uint64]Stream{
+			assignedPartitions: []int32{0},
+			numPartitions:      1,
+			usage: &UsageStore{
+				cfg: Config{NumPartitions: 1},
+				stripes: []map[string]tenantUsage{
 					{
 						"tenant1": {
 							0: {
@@ -155,11 +154,11 @@ func TestIngestLimits_ExceedsLimits(t *testing.T) {
 		{
 			name: "update existing active streams and drop new streams",
 			// setup data
-			assignedPartitionIDs: []int32{0},
-			numPartitions:        1,
-			metadata: &streamMetadata{
-				numPartitions: 1,
-				stripes: []map[string]map[int32]map[uint64]Stream{
+			assignedPartitions: []int32{0},
+			numPartitions:      1,
+			usage: &UsageStore{
+				cfg: Config{NumPartitions: 1},
+				stripes: []map[string]tenantUsage{
 					{
 						"tenant1": {
 							0: {
@@ -196,11 +195,11 @@ func TestIngestLimits_ExceedsLimits(t *testing.T) {
 		{
 			name: "update active streams and re-activate expired streams",
 			// setup data
-			assignedPartitionIDs: []int32{0},
-			numPartitions:        1,
-			metadata: &streamMetadata{
-				numPartitions: 1,
-				stripes: []map[string]map[int32]map[uint64]Stream{
+			assignedPartitions: []int32{0},
+			numPartitions:      1,
+			usage: &UsageStore{
+				cfg: Config{NumPartitions: 1},
+				stripes: []map[string]tenantUsage{
 					{
 						"tenant1": {
 							0: {
@@ -235,14 +234,14 @@ func TestIngestLimits_ExceedsLimits(t *testing.T) {
 		{
 			name: "drop streams per partition limit",
 			// setup data
-			assignedPartitionIDs: []int32{0, 1},
-			numPartitions:        2,
-			metadata: &streamMetadata{
-				numPartitions: 2,
-				locks:         make([]stripeLock, 2),
-				stripes: []map[string]map[int32]map[uint64]Stream{
-					make(map[string]map[int32]map[uint64]Stream),
-					make(map[string]map[int32]map[uint64]Stream),
+			assignedPartitions: []int32{0, 1},
+			numPartitions:      2,
+			usage: &UsageStore{
+				cfg:   Config{NumPartitions: 2},
+				locks: make([]stripeLock, 2),
+				stripes: []map[string]tenantUsage{
+					make(map[string]tenantUsage),
+					make(map[string]tenantUsage),
 				},
 			},
 			windowSize:       time.Hour,
@@ -268,14 +267,14 @@ func TestIngestLimits_ExceedsLimits(t *testing.T) {
 		{
 			name: "skip streams assigned to partitions not owned by instance but enforce limit",
 			// setup data
-			assignedPartitionIDs: []int32{0},
-			numPartitions:        2,
-			metadata: &streamMetadata{
-				numPartitions: 2,
-				locks:         make([]stripeLock, 2),
-				stripes: []map[string]map[int32]map[uint64]Stream{
-					make(map[string]map[int32]map[uint64]Stream),
-					make(map[string]map[int32]map[uint64]Stream),
+			assignedPartitions: []int32{0},
+			numPartitions:      2,
+			usage: &UsageStore{
+				cfg:   Config{NumPartitions: 1},
+				locks: make([]stripeLock, 2),
+				stripes: []map[string]tenantUsage{
+					make(map[string]tenantUsage),
+					make(map[string]tenantUsage),
 				},
 			},
 			windowSize:       time.Hour,
@@ -302,7 +301,7 @@ func TestIngestLimits_ExceedsLimits(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			reg := prometheus.NewRegistry()
-			limits := &testutil.MockLimits{
+			limits := &MockLimits{
 				MaxGlobalStreams: tt.maxActiveStreams,
 			}
 
@@ -332,7 +331,7 @@ func TestIngestLimits_ExceedsLimits(t *testing.T) {
 				logger:           log.NewNopLogger(),
 				metrics:          newMetrics(reg),
 				limits:           limits,
-				metadata:         tt.metadata,
+				usage:            tt.usage,
 				partitionManager: NewPartitionManager(log.NewNopLogger()),
 				clock:            clock,
 				wal:              wal,
@@ -340,8 +339,8 @@ func TestIngestLimits_ExceedsLimits(t *testing.T) {
 
 			// Assign the Partition IDs.
 			partitions := make(map[string][]int32)
-			partitions["test"] = make([]int32, 0, len(tt.assignedPartitionIDs))
-			partitions["test"] = append(partitions["test"], tt.assignedPartitionIDs...)
+			partitions["test"] = make([]int32, 0, len(tt.assignedPartitions))
+			partitions["test"] = append(partitions["test"], tt.assignedPartitions...)
 			s.partitionManager.Assign(context.Background(), nil, partitions)
 
 			// Call ExceedsLimits.
@@ -374,16 +373,16 @@ func TestIngestLimits_ExceedsLimits_Concurrent(t *testing.T) {
 	clock := quartz.NewMock(t)
 	now := clock.Now()
 
-	limits := &testutil.MockLimits{
+	limits := &MockLimits{
 		MaxGlobalStreams: 5,
 	}
 
 	wal := &mockWAL{t: t, ExpectedAppendsTotal: 50}
 
 	// Setup test data with a mix of active and expired streams>
-	metadata := &streamMetadata{
-		numPartitions: 1,
-		stripes: []map[string]map[int32]map[uint64]Stream{
+	usage := &UsageStore{
+		cfg: Config{NumPartitions: 1},
+		stripes: []map[string]tenantUsage{
 			{
 				"tenant1": {
 					0: {
@@ -421,7 +420,7 @@ func TestIngestLimits_ExceedsLimits_Concurrent(t *testing.T) {
 			},
 		},
 		logger:           log.NewNopLogger(),
-		metadata:         metadata,
+		usage:            usage,
 		partitionManager: NewPartitionManager(log.NewNopLogger()),
 		metrics:          newMetrics(prometheus.NewRegistry()),
 		limits:           limits,
@@ -481,7 +480,7 @@ func TestNewIngestLimits(t *testing.T) {
 		},
 	}
 
-	limits := &testutil.MockLimits{
+	limits := &MockLimits{
 		MaxGlobalStreams: 100,
 		IngestionRate:    1000,
 	}
@@ -493,6 +492,6 @@ func TestNewIngestLimits(t *testing.T) {
 
 	require.Equal(t, cfg, s.cfg)
 
-	require.NotNil(t, s.metadata)
+	require.NotNil(t, s.usage)
 	require.NotNil(t, s.lifecycler)
 }
