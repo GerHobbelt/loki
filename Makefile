@@ -18,7 +18,7 @@ BUILD_IN_CONTAINER ?= true
 CI                 ?= false
 
 # Ensure you run `make release-workflows` after changing this
-GO_VERSION         := 1.24.1
+GO_VERSION         := 1.24.2
 # Ensure you run `make IMAGE_TAG=<updated-tag> build-image-push` after changing this
 BUILD_IMAGE_TAG    := 0.34.6
 
@@ -373,7 +373,14 @@ else
 	go version
 	golangci-lint version
 	GO111MODULE=on golangci-lint run -v --timeout 15m --build-tags linux,promtail_journal_enabled
-	faillint -paths "sync/atomic=go.uber.org/atomic" ./...
+	faillint \
+		-paths "sync/atomic=go.uber.org/atomic" \
+		./...
+
+	# Use our spanlogger implementation instead of the one in dskit to make sure we use the correct tracing lib.
+	faillint \
+		-paths "github.com/grafana/dskit/spanlogger=github.com/grafana/loki/pkg/util/spanlogger" \
+		./...
 endif
 
 ########

@@ -46,8 +46,14 @@ var (
 	)
 	tenantStreamsDesc = prometheus.NewDesc(
 		"loki_ingest_limits_streams",
-		"The current number of streams per tenant. This is not a global total, as tenants can be sharded over multiple pods.",
-		[]string{"tenant", "state"},
+		"The current number of streams per tenant, including streams outside the active window.",
+		[]string{"tenant"},
+		nil,
+	)
+	tenantActiveStreamsDesc = prometheus.NewDesc(
+		"loki_ingest_limits_active_streams",
+		"The current number of active streams per tenant.",
+		[]string{"tenant"},
 		nil,
 	)
 )
@@ -175,8 +181,8 @@ func New(cfg Config, lims Limits, logger log.Logger, reg prometheus.Registerer) 
 		kgo.Balancers(kgo.CooperativeStickyBalancer()),
 		kgo.ConsumeResetOffset(kgo.NewOffset().AfterMilli(s.clock.Now().Add(-s.cfg.ActiveWindow).UnixMilli())),
 		kgo.DisableAutoCommit(),
-		kgo.OnPartitionsAssigned(s.partitionLifecycler.assign),
-		kgo.OnPartitionsRevoked(s.partitionLifecycler.revoke),
+		kgo.OnPartitionsAssigned(s.partitionLifecycler.Assign),
+		kgo.OnPartitionsRevoked(s.partitionLifecycler.Revoke),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create kafka client: %w", err)
@@ -212,42 +218,40 @@ func New(cfg Config, lims Limits, logger log.Logger, reg prometheus.Registerer) 
 func (s *Service) Describe(descs chan<- *prometheus.Desc) {
 	descs <- partitionsDesc
 	descs <- tenantStreamsDesc
+	descs <- tenantActiveStreamsDesc
 }
 
 func (s *Service) Collect(m chan<- prometheus.Metric) {
 	cutoff := s.clock.Now().Add(-s.cfg.ActiveWindow).UnixNano()
 	// active counts the number of active streams (within the window) per tenant.
 	active := make(map[string]int)
-	// expired counts the number of expired streams (outside the window) per tenant.
-	expired := make(map[string]int)
-	s.usage.all(func(tenant string, _ int32, stream streamUsage) {
-		if stream.lastSeenAt < cutoff {
-			expired[tenant]++
-		} else {
+	// total counts the total number of streams per tenant.
+	total := make(map[string]int)
+	s.usage.All(func(tenant string, _ int32, stream streamUsage) {
+		total[tenant]++
+		if stream.lastSeenAt >= cutoff {
 			active[tenant]++
 		}
 	})
-	for tenant, numActive := range active {
+	for tenant, numActiveStreams := range active {
+		m <- prometheus.MustNewConstMetric(
+			tenantActiveStreamsDesc,
+			prometheus.GaugeValue,
+			float64(numActiveStreams),
+			tenant,
+		)
+	}
+	for tenant, numStreams := range total {
 		m <- prometheus.MustNewConstMetric(
 			tenantStreamsDesc,
 			prometheus.GaugeValue,
-			float64(numActive),
+			float64(numStreams),
 			tenant,
-			"active",
 		)
 	}
-	for tenant, numExpired := range expired {
-		m <- prometheus.MustNewConstMetric(
-			tenantStreamsDesc,
-			prometheus.GaugeValue,
-			float64(numExpired),
-			tenant,
-			"expired",
-		)
-	}
-	partitions := s.partitionManager.list()
+	partitions := s.partitionManager.List()
 	for partition := range partitions {
-		state, ok := s.partitionManager.getState(partition)
+		state, ok := s.partitionManager.GetState(partition)
 		if ok {
 			m <- prometheus.MustNewConstMetric(
 				partitionsDesc,
@@ -301,7 +305,7 @@ func (s *Service) starting(ctx context.Context) (err error) {
 func (s *Service) running(ctx context.Context) error {
 	// Start the eviction goroutine
 	go s.evictOldStreamsPeriodic(ctx)
-	go s.consumer.run(ctx)
+	go s.consumer.Run(ctx)
 
 	for {
 		select {
@@ -317,14 +321,17 @@ func (s *Service) running(ctx context.Context) error {
 // evictOldStreamsPeriodic runs a periodic job that evicts old streams.
 // It runs two evictions per window size.
 func (s *Service) evictOldStreamsPeriodic(ctx context.Context) {
-	ticker := time.NewTicker(s.cfg.ActiveWindow / 2)
+	ticker := time.NewTicker(s.cfg.EvictionInterval)
 	defer ticker.Stop()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			s.usage.evict()
+			evicted := s.usage.Evict()
+			for tenant, numEvicted := range evicted {
+				s.metrics.tenantStreamEvictionsTotal.WithLabelValues(tenant).Add(float64(numEvicted))
+			}
 		}
 	}
 }
@@ -357,7 +364,7 @@ func (s *Service) stopping(failureCase error) error {
 // It returns the partitions that the tenant is assigned to and the instance still owns.
 func (s *Service) GetAssignedPartitions(_ context.Context, _ *proto.GetAssignedPartitionsRequest) (*proto.GetAssignedPartitionsResponse, error) {
 	resp := proto.GetAssignedPartitionsResponse{
-		AssignedPartitions: s.partitionManager.listByState(partitionReady),
+		AssignedPartitions: s.partitionManager.ListByState(partitionReady),
 	}
 	return &resp, nil
 }
@@ -377,7 +384,7 @@ func (s *Service) ExceedsLimits(ctx context.Context, req *proto.ExceedsLimitsReq
 		partition := int32(stream.StreamHash % uint64(s.cfg.NumPartitions))
 
 		// TODO(periklis): Do we need to report this as an error to the frontend?
-		if assigned := s.partitionManager.has(partition); !assigned {
+		if assigned := s.partitionManager.Has(partition); !assigned {
 			level.Warn(s.logger).Log("msg", "stream assigned partition not owned by instance", "stream_hash", stream.StreamHash, "partition", partition)
 			continue
 		}
@@ -388,13 +395,13 @@ func (s *Service) ExceedsLimits(ctx context.Context, req *proto.ExceedsLimitsReq
 	streams = streams[:valid]
 
 	cond := streamLimitExceeded(maxActiveStreams)
-	accepted, rejected := s.usage.update(req.Tenant, streams, lastSeenAt, cond)
+	accepted, rejected := s.usage.Update(req.Tenant, streams, lastSeenAt, cond)
 
 	var ingestedBytes uint64
 	for _, stream := range accepted {
 		ingestedBytes += stream.TotalSize
 
-		err := s.producer.produce(context.WithoutCancel(ctx), req.Tenant, stream)
+		err := s.producer.Produce(context.WithoutCancel(ctx), req.Tenant, stream)
 		if err != nil {
 			level.Error(s.logger).Log("msg", "failed to send streams", "error", err)
 		}

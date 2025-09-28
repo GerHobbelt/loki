@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"sort"
 	"time"
-	"unsafe"
 
 	"github.com/grafana/dskit/flagext"
 	lru "github.com/hashicorp/golang-lru/v2"
@@ -172,6 +171,10 @@ func NewBuilder(cfg BuilderConfig) (*Builder, error) {
 	}, nil
 }
 
+func (b *Builder) GetEstimatedSize() int {
+	return b.currentSizeEstimate
+}
+
 // Append buffers a stream to be written to a data object. Append returns an
 // error if the stream labels cannot be parsed or [ErrBuilderFull] if the
 // builder is full.
@@ -272,35 +275,25 @@ func streamSizeEstimate(stream logproto.Stream) int {
 	return size
 }
 
-func convertMetadata(md push.LabelsAdapter) []logs.RecordMetadata {
-	l := make([]logs.RecordMetadata, 0, len(md))
+func convertMetadata(md push.LabelsAdapter) labels.Labels {
+	l := make(labels.Labels, 0, len(md))
 	for _, label := range md {
-		l = append(l, logs.RecordMetadata{Name: label.Name, Value: unsafeSlice(label.Value, 0)})
+		l = append(l, labels.Label{Name: label.Name, Value: label.Value})
 	}
 	sort.Slice(l, func(i, j int) bool {
 		if l[i].Name == l[j].Name {
-			return cmp.Compare(unsafeString(l[i].Value), unsafeString(l[j].Value)) < 0
+			return cmp.Compare(l[i].Value, l[j].Value) < 0
 		}
 		return cmp.Compare(l[i].Name, l[j].Name) < 0
 	})
 	return l
 }
 
-func unsafeSlice(data string, capacity int) []byte {
-	if capacity <= 0 {
-		capacity = len(data)
-	}
-	return unsafe.Slice(unsafe.StringData(data), capacity)
-}
-
-func unsafeString(data []byte) string {
-	return unsafe.String(unsafe.SliceData(data), len(data))
-}
-
 func (b *Builder) estimatedSize() int {
 	var size int
 	size += b.streams.EstimatedSize()
 	size += b.logs.EstimatedSize()
+	size += b.builder.Bytes()
 	b.metrics.sizeEstimate.Set(float64(size))
 	return size
 }
