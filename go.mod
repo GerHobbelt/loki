@@ -92,7 +92,7 @@ require (
 	github.com/shurcooL/vfsgen v0.0.0-20230704071429-0000e147ea92
 	github.com/sony/gobreaker/v2 v2.2.0
 	github.com/spf13/afero v1.14.0
-	github.com/stretchr/testify v1.11.0
+	github.com/stretchr/testify v1.11.1
 	github.com/uber/jaeger-client-go v2.30.0+incompatible
 	github.com/xdg-go/scram v1.1.2
 	go.etcd.io/bbolt v1.4.3
@@ -153,7 +153,7 @@ require (
 	github.com/twmb/franz-go/pkg/kmsg v1.11.2
 	github.com/twmb/franz-go/plugin/kotel v1.6.0
 	github.com/twmb/franz-go/plugin/kprom v1.2.1
-	go.opentelemetry.io/collector/pdata v1.38.0
+	go.opentelemetry.io/collector/pdata v1.39.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.62.0
 	go.opentelemetry.io/otel/sdk v1.37.0
 	go4.org/netipx v0.0.0-20230125063823-8449b0a6169f
@@ -262,7 +262,7 @@ require (
 	go.opentelemetry.io/collector/confmap v1.35.0 // indirect
 	go.opentelemetry.io/collector/confmap/xconfmap v0.129.0 // indirect
 	go.opentelemetry.io/collector/consumer v1.35.0 // indirect
-	go.opentelemetry.io/collector/featuregate v1.35.0 // indirect
+	go.opentelemetry.io/collector/featuregate v1.39.0 // indirect
 	go.opentelemetry.io/collector/internal/telemetry v0.129.0 // indirect
 	go.opentelemetry.io/collector/pipeline v0.129.0 // indirect
 	go.opentelemetry.io/collector/processor v1.35.0 // indirect
