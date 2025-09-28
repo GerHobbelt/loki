@@ -17,6 +17,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/grafana/loki/v3/pkg/dataobj"
+	"github.com/grafana/loki/v3/pkg/engine/internal/datatype"
 	"github.com/grafana/loki/v3/pkg/engine/internal/types"
 	"github.com/grafana/loki/v3/pkg/engine/planner/physical"
 	"github.com/grafana/loki/v3/pkg/util/topk"
@@ -194,7 +195,6 @@ func (s *dataobjScan) read() (arrow.Record, error) {
 	for _, reader := range s.readers {
 		g.Go(func() error {
 			buf := make([]dataobj.Record, 512)
-
 			for {
 				n, err := reader.Read(ctx, buf)
 				if n == 0 && errors.Is(err, io.EOF) {
@@ -353,8 +353,8 @@ func (s *dataobjScan) effectiveProjections(h *topk.Heap[dataobj.Record]) ([]phys
 	})
 
 	// Add fixed columns at the end.
-	addColumn("timestamp", types.ColumnTypeBuiltin)
-	addColumn("message", types.ColumnTypeBuiltin)
+	addColumn(types.ColumnNameBuiltinTimestamp, types.ColumnTypeBuiltin)
+	addColumn(types.ColumnNameBuiltinMessage, types.ColumnTypeBuiltin)
 
 	return columns, nil
 }
@@ -388,7 +388,7 @@ func schemaFromColumns(columns []physical.ColumnExpression) (*arrow.Schema, erro
 		}
 
 		md := arrow.MetadataFrom(map[string]string{
-			types.ColumnTypeMetadataKey: columnExpr.Ref.Type.String(),
+			types.MetadataKeyColumnType: columnExpr.Ref.Type.String(),
 		})
 
 		switch columnExpr.Ref.Type {
@@ -425,9 +425,10 @@ func schemaFromColumns(columns []physical.ColumnExpression) (*arrow.Schema, erro
 			})
 
 		case types.ColumnTypeBuiltin:
+			ty, md := builtinColumnType(columnExpr.Ref)
 			addField(arrow.Field{
 				Name:     columnExpr.Ref.Column,
-				Type:     builtinColumnType(columnExpr.Ref),
+				Type:     ty,
 				Nullable: true,
 				Metadata: md,
 			})
@@ -452,13 +453,13 @@ func schemaFromColumns(columns []physical.ColumnExpression) (*arrow.Schema, erro
 				Name:     columnExpr.Ref.Column,
 				Type:     arrow.BinaryTypes.String,
 				Nullable: true,
-				Metadata: arrow.MetadataFrom(map[string]string{types.ColumnTypeMetadataKey: types.ColumnTypeLabel.String()}),
+				Metadata: arrow.MetadataFrom(map[string]string{types.MetadataKeyColumnType: types.ColumnTypeLabel.String()}),
 			})
 			addField(arrow.Field{
 				Name:     columnExpr.Ref.Column,
 				Type:     arrow.BinaryTypes.String,
 				Nullable: true,
-				Metadata: arrow.MetadataFrom(map[string]string{types.ColumnTypeMetadataKey: types.ColumnTypeMetadata.String()}),
+				Metadata: arrow.MetadataFrom(map[string]string{types.MetadataKeyColumnType: types.ColumnTypeMetadata.String()}),
 			})
 
 		case types.ColumnTypeParsed:
@@ -469,16 +470,16 @@ func schemaFromColumns(columns []physical.ColumnExpression) (*arrow.Schema, erro
 	return arrow.NewSchema(fields, nil), nil
 }
 
-func builtinColumnType(ref types.ColumnRef) arrow.DataType {
+func builtinColumnType(ref types.ColumnRef) (arrow.DataType, arrow.Metadata) {
 	if ref.Type != types.ColumnTypeBuiltin {
 		panic("builtinColumnType called with a non-builtin column")
 	}
 
 	switch ref.Column {
-	case "timestamp":
-		return arrow.FixedWidthTypes.Timestamp_ns
-	case "message":
-		return arrow.BinaryTypes.String
+	case types.ColumnNameBuiltinTimestamp:
+		return arrow.FixedWidthTypes.Timestamp_ns, datatype.ColumnMetadataBuiltinTimestamp
+	case types.ColumnNameBuiltinMessage:
+		return arrow.BinaryTypes.String, datatype.ColumnMetadataBuiltinMessage
 	default:
 		panic(fmt.Sprintf("unsupported builtin column type %s", ref))
 	}
@@ -489,7 +490,7 @@ func builtinColumnType(ref types.ColumnRef) arrow.DataType {
 // appendToBuilder panics if the type of field does not match the datatype of
 // builder.
 func (s *dataobjScan) appendToBuilder(builder array.Builder, field *arrow.Field, record *dataobj.Record) {
-	columnType, ok := field.Metadata.GetValue(types.ColumnTypeMetadataKey)
+	columnType, ok := field.Metadata.GetValue(types.MetadataKeyColumnType)
 	if !ok {
 		// This shouldn't happen; we control the metadata here on the fields.
 		panic(fmt.Sprintf("missing column type in field %s", field.Name))
@@ -518,10 +519,10 @@ func (s *dataobjScan) appendToBuilder(builder array.Builder, field *arrow.Field,
 		}
 
 	case types.ColumnTypeBuiltin.String():
-		if field.Name == "timestamp" {
+		if field.Name == types.ColumnNameBuiltinTimestamp {
 			ts, _ := arrow.TimestampFromTime(record.Timestamp, arrow.Nanosecond)
 			builder.(*array.TimestampBuilder).Append(ts)
-		} else if field.Name == "message" {
+		} else if field.Name == types.ColumnNameBuiltinMessage {
 			// Use the inner BinaryBuilder to avoid converting record.Line to a
 			// string and back.
 			builder.(*array.StringBuilder).BinaryBuilder.Append(record.Line)
