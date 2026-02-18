@@ -34,8 +34,6 @@ func toTreeNode(n Node) *tree.Node {
 			tree.NewProperty("streams", false, len(node.StreamIDs)),
 			tree.NewProperty("section_id", false, node.Section),
 			tree.NewProperty("projections", true, toAnySlice(node.Projections)...),
-			tree.NewProperty("direction", false, node.Direction),
-			tree.NewProperty("limit", false, node.Limit),
 		}
 		for i := range node.Predicates {
 			treeNode.Properties = append(treeNode.Properties, tree.NewProperty(fmt.Sprintf("predicate[%d]", i), false, node.Predicates[i].String()))
@@ -80,6 +78,19 @@ func toTreeNode(n Node) *tree.Node {
 		}
 		if len(node.RequestedKeys) > 0 {
 			treeNode.Properties = append(treeNode.Properties, tree.NewProperty("requested_keys", true, toAnySlice(node.RequestedKeys)...))
+		}
+	case *ColumnCompat:
+		treeNode.Properties = []tree.Property{
+			tree.NewProperty("src", false, node.Source),
+			tree.NewProperty("dst", false, node.Destination),
+			tree.NewProperty("collision", false, node.Collision),
+		}
+	case *TopK:
+		treeNode.Properties = []tree.Property{
+			tree.NewProperty("sort_by", false, node.SortBy.String()),
+			tree.NewProperty("ascending", false, node.Ascending),
+			tree.NewProperty("nulls_first", false, node.NullsFirst),
+			tree.NewProperty("k", false, node.K),
 		}
 	}
 	return treeNode

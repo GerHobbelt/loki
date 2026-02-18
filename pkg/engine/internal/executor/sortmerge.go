@@ -66,20 +66,10 @@ func (p *KWayMerge) Close() {
 	}
 }
 
-// Inputs implements Pipeline.
-func (p *KWayMerge) Inputs() []Pipeline {
-	return p.inputs
-}
-
 // Read implements Pipeline.
 func (p *KWayMerge) Read(ctx context.Context) (arrow.Record, error) {
 	p.init(ctx)
 	return p.read(ctx)
-}
-
-// Transport implements Pipeline.
-func (p *KWayMerge) Transport() Transport {
-	return Local
 }
 
 func (p *KWayMerge) init(ctx context.Context) {
@@ -154,11 +144,14 @@ loop:
 		if err != nil {
 			return nil, err
 		}
+		defer col.Release()
+
 		tsCol, ok := col.ToArray().(*array.Timestamp)
 		if !ok {
 			return nil, errors.New("column is not a timestamp column")
 		}
 		ts := tsCol.Value(int(p.offsets[i]))
+		tsCol.Release()
 
 		// Populate slices for sorting
 		inputIndexes = append(inputIndexes, i)
@@ -199,11 +192,13 @@ loop:
 	if err != nil {
 		return nil, err
 	}
+	defer col.Release()
 	// We assume the column is a Uint64 array
 	tsCol, ok := col.ToArray().(*array.Timestamp)
 	if !ok {
 		return nil, errors.New("column is not a timestamp column")
 	}
+	defer tsCol.Release()
 
 	// Calculate start/end of the sub-slice of the record
 	start := p.offsets[j]

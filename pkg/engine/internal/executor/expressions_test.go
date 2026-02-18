@@ -10,15 +10,16 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/grafana/loki/v3/pkg/engine/internal/planner/physical"
+	"github.com/grafana/loki/v3/pkg/engine/internal/semconv"
 	"github.com/grafana/loki/v3/pkg/engine/internal/types"
 )
 
 var (
 	fields = []arrow.Field{
-		{Name: "name", Type: types.Arrow.String, Metadata: types.ColumnMetadata(types.ColumnTypeBuiltin, types.Loki.String)},
-		{Name: "timestamp", Type: types.Arrow.Timestamp, Metadata: types.ColumnMetadata(types.ColumnTypeBuiltin, types.Loki.Timestamp)},
-		{Name: "value", Type: types.Arrow.Float, Metadata: types.ColumnMetadata(types.ColumnTypeBuiltin, types.Loki.Float)},
-		{Name: "valid", Type: types.Arrow.Bool, Metadata: types.ColumnMetadata(types.ColumnTypeBuiltin, types.Loki.Bool)},
+		semconv.FieldFromFQN("utf8.builtin.name", false),
+		semconv.FieldFromFQN("timestamp_ns.builtin.timestamp", false),
+		semconv.FieldFromFQN("float64.builtin.value", false),
+		semconv.FieldFromFQN("bool.builtin.valid", false),
 	}
 	sampledata = `Alice,1745487598764058205,0.2586284611568047,false
 Bob,1745487598764058305,0.7823145698741236,true
@@ -215,6 +216,7 @@ func TestEvaluateBinaryExpression(t *testing.T) {
 func collectBooleanColumnVector(vec ColumnVector) []bool {
 	res := make([]bool, 0, vec.Len())
 	arr := vec.ToArray().(*array.Boolean)
+	defer arr.Release()
 	for i := range int(vec.Len()) {
 		res = append(res, arr.Value(i))
 	}
@@ -230,8 +232,8 @@ func batch(n int, now time.Time) arrow.Record {
 	// 2. Define the schema
 	schema := arrow.NewSchema(
 		[]arrow.Field{
-			{Name: "message", Type: types.Arrow.String, Metadata: types.ColumnMetadataBuiltinMessage},
-			{Name: "timestamp", Type: types.Arrow.Timestamp, Metadata: types.ColumnMetadataBuiltinTimestamp},
+			semconv.FieldFromIdent(semconv.ColumnIdentMessage, false),
+			semconv.FieldFromIdent(semconv.ColumnIdentTimestamp, false),
 		},
 		nil, // No metadata
 	)
@@ -272,9 +274,9 @@ func batch(n int, now time.Time) arrow.Record {
 func TestEvaluateAmbiguousColumnExpression(t *testing.T) {
 	// Test precedence between generated, metadata, and label columns
 	fields := []arrow.Field{
-		{Name: "test", Type: arrow.BinaryTypes.String, Metadata: types.ColumnMetadata(types.ColumnTypeLabel, types.Loki.String)},
-		{Name: "test", Type: arrow.BinaryTypes.String, Metadata: types.ColumnMetadata(types.ColumnTypeMetadata, types.Loki.String)},
-		{Name: "test", Type: arrow.BinaryTypes.String, Metadata: types.ColumnMetadata(types.ColumnTypeGenerated, types.Loki.String)},
+		semconv.FieldFromFQN("utf8.label.test", true),
+		semconv.FieldFromFQN("utf8.metadata.test", true),
+		semconv.FieldFromFQN("utf8.generated.test", true),
 	}
 
 	// CSV data where:
@@ -325,8 +327,10 @@ null,null,null`
 		colVec, err := e.eval(colExpr, record)
 		require.NoError(t, err)
 		require.IsType(t, &CoalesceVector{}, colVec)
+		defer colVec.Release()
 
 		arr := colVec.ToArray()
+		defer arr.Release()
 		require.IsType(t, &array.String{}, arr)
 		stringArr := arr.(*array.String)
 
@@ -340,7 +344,7 @@ null,null,null`
 	t.Run("look-up matching single column should return Array", func(t *testing.T) {
 		// Create a record with only one column type
 		fields := []arrow.Field{
-			{Name: "single", Type: arrow.BinaryTypes.String, Metadata: types.ColumnMetadata(types.ColumnTypeLabel, types.Loki.String)},
+			semconv.FieldFromFQN("utf8.label.single", false),
 		}
 		data := `label_0
 label_1

@@ -24,6 +24,7 @@ type Context struct {
 	through       time.Time
 	rangeInterval time.Duration
 	direction     SortOrder
+	v1Compatible  bool
 }
 
 func NewContext(from, through time.Time) *Context {
@@ -152,6 +153,9 @@ func (p *Planner) process(inst logical.Value, ctx *Context) ([]Node, error) {
 		return p.processVectorAggregation(inst, ctx)
 	case *logical.Parse:
 		return p.processParse(inst, ctx)
+	case *logical.LogQLCompat:
+		p.context.v1Compatible = true
+		return p.process(inst.Value, ctx)
 	}
 	return nil, nil
 }
@@ -165,29 +169,46 @@ func (p *Planner) buildNodeGroup(currentGroup []FilteredShardDescriptor, baseNod
 				Location:  descriptor.Location,
 				StreamIDs: descriptor.Streams,
 				Section:   section,
-				Direction: ctx.direction,
 			}
 			p.plan.graph.Add(scan)
 			scans = append(scans, scan)
 		}
 	}
 	if len(scans) > 1 && ctx.direction != UNSORTED {
-		sortMerge := &SortMerge{
-			Column: newColumnExpr(types.ColumnNameBuiltinTimestamp, types.ColumnTypeBuiltin),
-			Order:  ctx.direction, // apply direction from previously visited Sort node
+		// a single topK for overlapping scan nodes.
+		topK := &TopK{
+			SortBy:     newColumnExpr(types.ColumnNameBuiltinTimestamp, types.ColumnTypeBuiltin),
+			Ascending:  ctx.direction == ASC, // apply direction from previously visited Sort node
+			NullsFirst: false,                // temporarily hardcoded.
 		}
-		p.plan.graph.Add(sortMerge)
+		p.plan.graph.Add(topK)
 		for _, scan := range scans {
-			if err := p.plan.graph.AddEdge(dag.Edge[Node]{Parent: sortMerge, Child: scan}); err != nil {
+			if err := p.plan.graph.AddEdge(dag.Edge[Node]{Parent: topK, Child: scan}); err != nil {
 				return err
 			}
 		}
-		if err := p.plan.graph.AddEdge(dag.Edge[Node]{Parent: baseNode, Child: sortMerge}); err != nil {
+		if err := p.plan.graph.AddEdge(dag.Edge[Node]{Parent: baseNode, Child: topK}); err != nil {
 			return err
 		}
 	} else {
 		for _, scan := range scans {
-			if err := p.plan.graph.AddEdge(dag.Edge[Node]{Parent: baseNode, Child: scan}); err != nil {
+			child := scan
+			if ctx.direction != UNSORTED {
+				topK := &TopK{
+					SortBy:     newColumnExpr(types.ColumnNameBuiltinTimestamp, types.ColumnTypeBuiltin),
+					Ascending:  ctx.direction == ASC, // apply direction from previously visited Sort node
+					NullsFirst: false,                // temporarily hardcoded.
+				}
+				p.plan.graph.Add(topK)
+
+				if err := p.plan.graph.AddEdge(dag.Edge[Node]{Parent: topK, Child: scan}); err != nil {
+					return err
+				}
+
+				child = topK
+			}
+
+			if err := p.plan.graph.AddEdge(dag.Edge[Node]{Parent: baseNode, Child: child}); err != nil {
 				return err
 			}
 		}
@@ -236,21 +257,42 @@ func (p *Planner) processMakeTable(lp *logical.MakeTable, ctx *Context) ([]Node,
 		return nil, err
 	}
 
-	merge := &Merge{}
-	p.plan.graph.Add(merge)
 	groups := overlappingShardDescriptors(filteredShardDescriptors)
-
 	if ctx.direction == ASC {
 		slices.Reverse(groups)
 	}
 
+	// Scan work can be parallelized across multiple workers, so we wrap
+	// everything into a single Parallelize node.
+	var parallelize Node = &Parallelize{}
+	p.plan.graph.Add(parallelize)
+
+	var merge Node = &Merge{}
+	p.plan.graph.Add(merge)
 	for _, gr := range groups {
 		if err := p.buildNodeGroup(gr, merge, ctx); err != nil {
 			return nil, err
 		}
 	}
 
-	return []Node{merge}, nil
+	if p.context.v1Compatible {
+		compat := &ColumnCompat{
+			Source:      types.ColumnTypeMetadata,
+			Destination: types.ColumnTypeMetadata,
+			Collision:   types.ColumnTypeLabel,
+		}
+		merge, err = p.wrapNodeWith(merge, compat)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Add an edge between the parallelize and the final merge node (which may
+	// have been changed after processing compatibility).
+	if err := p.plan.graph.AddEdge(dag.Edge[Node]{Parent: parallelize, Child: merge}); err != nil {
+		return nil, err
+	}
+	return []Node{parallelize}, nil
 }
 
 // Convert [logical.Select] into one [Filter] node.
@@ -356,7 +398,7 @@ func (p *Planner) processVectorAggregation(lp *logical.VectorAggregation, ctx *C
 // Convert [logical.Parse] into one [ParseNode] node.
 // A ParseNode initially has an empty list of RequestedKeys which will be populated during optimization.
 func (p *Planner) processParse(lp *logical.Parse, ctx *Context) ([]Node, error) {
-	node := &ParseNode{
+	var node Node = &ParseNode{
 		Kind: convertParserKind(lp.Kind),
 	}
 	p.plan.graph.Add(node)
@@ -372,7 +414,27 @@ func (p *Planner) processParse(lp *logical.Parse, ctx *Context) ([]Node, error) 
 		}
 	}
 
+	if p.context.v1Compatible {
+		compat := &ColumnCompat{
+			Source:      types.ColumnTypeParsed,
+			Destination: types.ColumnTypeParsed,
+			Collision:   types.ColumnTypeLabel,
+		}
+		node, err = p.wrapNodeWith(node, compat)
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	return []Node{node}, nil
+}
+
+func (p *Planner) wrapNodeWith(node Node, wrapper Node) (Node, error) {
+	p.plan.graph.Add(wrapper)
+	if err := p.plan.graph.AddEdge(dag.Edge[Node]{Parent: wrapper, Child: node}); err != nil {
+		return nil, err
+	}
+	return wrapper, nil
 }
 
 // Optimize runs optimization passes over the plan, modifying it
@@ -383,14 +445,16 @@ func (p *Planner) Optimize(plan *Plan) (*Plan, error) {
 			newOptimization("PredicatePushdown", plan).withRules(
 				&predicatePushdown{plan: plan},
 			),
+			newOptimization("CleanupFilters", plan).withRules(
+				&removeNoopFilter{plan: plan},
+			),
 			newOptimization("LimitPushdown", plan).withRules(
 				&limitPushdown{plan: plan},
 			),
 			newOptimization("ProjectionPushdown", plan).withRules(
 				&projectionPushdown{plan: plan},
 			),
-			newOptimization("Cleanup", plan).withRules(
-				&removeNoopFilter{plan: plan},
+			newOptimization("CleanupMerge", plan).withRules(
 				&removeNoopMerge{plan: plan},
 			),
 		}

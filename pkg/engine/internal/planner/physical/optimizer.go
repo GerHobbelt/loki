@@ -124,17 +124,16 @@ func (r *limitPushdown) apply(node Node) bool {
 }
 
 func (r *limitPushdown) applyLimitPushdown(node Node, limit uint32) bool {
+	var changed bool
 	switch node := node.(type) {
-	case *DataObjScan:
-		// In case the scan node is reachable from multiple different limit nodes, we need to take the largest limit.
-		node.Limit = max(node.Limit, limit)
-		return true
+	case *TopK:
+		node.K = max(node.K, int(limit))
+		changed = true
 	case *Filter:
 		// If there is a filter, child nodes may need to read up to all their lines to successfully apply the filter, so stop applying limit pushdown.
 		return false
 	}
 
-	var changed bool
 	for _, child := range r.plan.Children(node) {
 		if ok := r.applyLimitPushdown(child, limit); ok {
 			changed = true
@@ -188,13 +187,14 @@ func (r *projectionPushdown) apply(node Node) bool {
 			return false
 		}
 	case *RangeAggregation:
-		if len(node.PartitionBy) == 0 || !slices.Contains(types.SupportedRangeAggregationTypes, node.Operation) {
+		if !slices.Contains(types.SupportedRangeAggregationTypes, node.Operation) {
 			return false
 		}
 
 		projections := make([]ColumnExpression, len(node.PartitionBy)+1)
 		copy(projections, node.PartitionBy)
-		// Always project timestamp column
+		// Always project timestamp column even if partitionBy is empty.
+		// Timestamp values are required to perform range aggregation.
 		projections[len(node.PartitionBy)] = &ColumnExpr{Ref: types.ColumnRef{Column: types.ColumnNameBuiltinTimestamp, Type: types.ColumnTypeBuiltin}}
 
 		return r.pushToChildren(node, projections, false)
@@ -230,7 +230,7 @@ func (r *projectionPushdown) applyProjectionPushdown(
 		return r.handleParseNode(node, projections, applyIfNotEmpty)
 	case *RangeAggregation:
 		return r.handleRangeAggregation(node, projections)
-	case *Filter, *Merge, *SortMerge:
+	case *Parallelize, *Filter, *Merge, *SortMerge, *ColumnCompat:
 		// Push to next direct child that cares about projections
 		return r.pushToChildren(node, projections, applyIfNotEmpty)
 	}
