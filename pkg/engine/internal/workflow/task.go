@@ -12,6 +12,9 @@ type Task struct {
 	// ULID is a unique identifier of the Task.
 	ULID ulid.ULID
 
+	// TenantID is a tenant associated with this task.
+	TenantID string
+
 	// Fragment is the local physical plan that this Task represents.
 	Fragment *physical.Plan
 
@@ -24,8 +27,8 @@ type Task struct {
 	Sinks map[physical.Node][]*Stream
 }
 
-// ID returns the string form of the Task's ULID.
-func (t *Task) ID() string { return t.ULID.String() }
+// ID returns the Task's ULID.
+func (t *Task) ID() ulid.ULID { return t.ULID }
 
 // A Stream is an abstract representation of how data flows across Task
 // boundaries. Each Stream has exactly one sender (a Task), and one receiver
@@ -33,4 +36,7 @@ func (t *Task) ID() string { return t.ULID.String() }
 type Stream struct {
 	// ULID is a unique identifier of the Stream.
 	ULID ulid.ULID
+
+	// TenantID is a tenant associated with this stream.
+	TenantID string
 }
