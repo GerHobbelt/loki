@@ -94,7 +94,7 @@ var mockedMetastoreSections = []*metastore.DataobjSectionDescriptor{
 		Size:      1 << 10,
 		Start:     time.Date(2025, time.January, 1, 0, 0, 0, 0, time.UTC),
 		End:       time.Date(2025, time.January, 1, 0, 30, 0, 0, time.UTC),
-		LabelsByStreamID: map[int64][]string{
+		AmbiguousPredicatesByStream: map[int64][]string{
 			1: {"app", "one", "foo", "bar"},
 			2: {"app", "two", "foo", "bar"},
 		},
@@ -109,7 +109,7 @@ var mockedMetastoreSections = []*metastore.DataobjSectionDescriptor{
 		Size:      1 << 10,
 		Start:     time.Date(2025, time.January, 1, 0, 30, 0, 0, time.UTC),
 		End:       time.Date(2025, time.January, 1, 1, 0, 0, 0, time.UTC),
-		LabelsByStreamID: map[int64][]string{
+		AmbiguousPredicatesByStream: map[int64][]string{
 			1: {"app", "one", "foo", "bar"},
 			2: {"app", "two", "foo", "bar"},
 		},
@@ -214,9 +214,9 @@ VectorAggregation operation=sum group_by=()
         └── Filter predicate[0]=AND(EQ(generated.__error__, ""), EQ(generated.__error_details__, ""))
             └── Projection all=true drop=(ambiguous.__error__, ambiguous.__error_details__)
                 └── Compat src=parsed dst=parsed collisions=(label, metadata)
-                    └── Projection all=true expand=(PARSE_JSON(builtin.message, [], false, false))
+                    └── Projection all=true expand=(PARSE_LOGFMT(builtin.message, [], false, false))
                         └── Compat src=parsed dst=parsed collisions=(label, metadata)
-                            └── Projection all=true expand=(PARSE_LOGFMT(builtin.message, [], false, false))
+                            └── Projection all=true expand=(PARSE_JSON(builtin.message, [], false, false))
                                 └── Filter predicate[0]=EQ(ambiguous.detected_level, "error")
                                     └── Compat src=metadata dst=metadata collisions=(label)
                                         └── ScanSet num_targets=2 predicate[0]=GTE(builtin.timestamp, 2024-12-31T23:59:00Z) predicate[1]=LT(builtin.timestamp, 2025-01-01T01:00:00Z)
