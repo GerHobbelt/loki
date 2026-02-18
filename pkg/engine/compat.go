@@ -31,8 +31,9 @@ var (
 	_ ResultBuilder = &matrixResultBuilder{}
 )
 
-func newStreamsResultBuilder() *streamsResultBuilder {
+func newStreamsResultBuilder(dir logproto.Direction) *streamsResultBuilder {
 	return &streamsResultBuilder{
+		direction:   dir,
 		data:        make(logqlmodel.Streams, 0),
 		streams:     make(map[string]int),
 		rowBuilders: nil,
@@ -40,6 +41,8 @@ func newStreamsResultBuilder() *streamsResultBuilder {
 }
 
 type streamsResultBuilder struct {
+	direction logproto.Direction
+
 	streams map[string]int
 	data    logqlmodel.Streams
 	count   int
@@ -54,6 +57,7 @@ type rowBuilder struct {
 	lbsBuilder      *labels.Builder
 	metadataBuilder *labels.Builder
 	parsedBuilder   *labels.Builder
+	parsedEmptyKeys []string
 }
 
 func (b *streamsResultBuilder) CollectRecord(rec arrow.Record) {
@@ -137,10 +141,15 @@ func (b *streamsResultBuilder) CollectRecord(rec arrow.Record) {
 				if b.rowBuilders[rowIdx].parsedBuilder.Get(shortName) != "" {
 					return
 				}
+
 				b.rowBuilders[rowIdx].parsedBuilder.Set(shortName, parsedVal)
 				b.rowBuilders[rowIdx].lbsBuilder.Set(shortName, parsedVal)
 				if b.rowBuilders[rowIdx].metadataBuilder.Get(shortName) != "" {
 					b.rowBuilders[rowIdx].metadataBuilder.Del(shortName)
+				}
+				// If the parsed value is empty, the builder won't accept it as it's not a valid Prometheus-style label. We must add it later for LogQL compatibility.
+				if parsedVal == "" {
+					b.rowBuilders[rowIdx].parsedEmptyKeys = append(b.rowBuilders[rowIdx].parsedEmptyKeys, shortName)
 				}
 			})
 		}
@@ -157,16 +166,39 @@ func (b *streamsResultBuilder) CollectRecord(rec arrow.Record) {
 			continue
 		}
 
+		// For compatibility with LogQL, empty parsed labels need to be added to the stream labels & parsed label sets.
+		// The Prometheus label builder does not allow empty strings for label values, so we must work around it by creating a new builder and adding the empty labels to it.
+		var lbsString string
+		parsedLbs := logproto.FromLabelsToLabelAdapters(b.rowBuilders[rowIdx].parsedBuilder.Labels())
+		if len(b.rowBuilders[rowIdx].parsedEmptyKeys) > 0 {
+			newLbsBuilder := labels.NewScratchBuilder(lbs.Len())
+			lbs.Range(func(label labels.Label) {
+				newLbsBuilder.Add(label.Name, label.Value)
+			})
+
+			for _, key := range b.rowBuilders[rowIdx].parsedEmptyKeys {
+				newLbsBuilder.Add(key, "")
+				parsedLbs = append(parsedLbs, logproto.LabelAdapter{Name: key, Value: ""})
+			}
+			newLbsBuilder.Sort()
+			lbsString = newLbsBuilder.Labels().String()
+			sort.Slice(parsedLbs, func(i, j int) bool {
+				return parsedLbs[i].Name < parsedLbs[j].Name
+			})
+		} else {
+			lbsString = lbs.String()
+		}
+
 		entry := logproto.Entry{
 			Timestamp:          ts,
 			Line:               line,
 			StructuredMetadata: logproto.FromLabelsToLabelAdapters(b.rowBuilders[rowIdx].metadataBuilder.Labels()),
-			Parsed:             logproto.FromLabelsToLabelAdapters(b.rowBuilders[rowIdx].parsedBuilder.Labels()),
+			Parsed:             parsedLbs,
 		}
 		b.resetRowBuilder(rowIdx)
 
 		// Add entry to appropriate stream
-		key := lbs.String()
+		key := lbsString
 		idx, ok := b.streams[key]
 		if !ok {
 			idx = len(b.data)
@@ -200,6 +232,7 @@ func (b *streamsResultBuilder) ensureRowBuilders(newLen int) {
 			lbsBuilder:      labels.NewBuilder(labels.EmptyLabels()),
 			metadataBuilder: labels.NewBuilder(labels.EmptyLabels()),
 			parsedBuilder:   labels.NewBuilder(labels.EmptyLabels()),
+			parsedEmptyKeys: make([]string, 0),
 		}
 	}
 }
@@ -210,10 +243,11 @@ func (b *streamsResultBuilder) resetRowBuilder(i int) {
 	b.rowBuilders[i].lbsBuilder.Reset(labels.EmptyLabels())
 	b.rowBuilders[i].metadataBuilder.Reset(labels.EmptyLabels())
 	b.rowBuilders[i].parsedBuilder.Reset(labels.EmptyLabels())
+	b.rowBuilders[i].parsedEmptyKeys = b.rowBuilders[i].parsedEmptyKeys[:0]
 }
 
 func forEachNotNullRowColValue(numRows int, col arrow.Array, f func(rowIdx int)) {
-	for rowIdx := 0; rowIdx < numRows; rowIdx++ {
+	for rowIdx := range numRows {
 		if col.IsNull(rowIdx) {
 			continue
 		}
@@ -222,6 +256,19 @@ func forEachNotNullRowColValue(numRows int, col arrow.Array, f func(rowIdx int))
 }
 
 func (b *streamsResultBuilder) Build(s stats.Result, md *metadata.Context) logqlmodel.Result {
+	// Executor does not guarantee order of entries, so we sort them here.
+	for _, stream := range b.data {
+		if b.direction == logproto.BACKWARD {
+			sort.Slice(stream.Entries, func(a, b int) bool {
+				return stream.Entries[a].Timestamp.After(stream.Entries[b].Timestamp)
+			})
+		} else {
+			sort.Slice(stream.Entries, func(a, b int) bool {
+				return stream.Entries[a].Timestamp.Before(stream.Entries[b].Timestamp)
+			})
+		}
+	}
+
 	sort.Sort(b.data)
 	return logqlmodel.Result{
 		Data:       b.data,

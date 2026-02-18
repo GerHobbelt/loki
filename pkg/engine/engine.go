@@ -323,7 +323,11 @@ func (e *Engine) buildWorkflow(ctx context.Context, logger log.Logger, physicalP
 	span := trace.SpanFromContext(ctx)
 	timer := prometheus.NewTimer(e.metrics.workflowPlanning)
 
-	wf, err := workflow.New(logger, tenantID, e.scheduler.inner, physicalPlan)
+	opts := workflow.Options{
+		MaxRunningScanTasks:  e.limits.MaxScanTaskParallelism(tenantID),
+		MaxRunningOtherTasks: 0,
+	}
+	wf, err := workflow.New(opts, logger, tenantID, e.scheduler.inner, physicalPlan)
 	if err != nil {
 		level.Warn(logger).Log("msg", "failed to create workflow", "err", err)
 		span.RecordError(err)
@@ -358,7 +362,7 @@ func (e *Engine) collectResult(ctx context.Context, logger log.Logger, params lo
 	var builder ResultBuilder
 	switch params.GetExpression().(type) {
 	case syntax.LogSelectorExpr:
-		builder = newStreamsResultBuilder()
+		builder = newStreamsResultBuilder(params.Direction())
 	case syntax.SampleExpr:
 		if params.Step() > 0 {
 			builder = newMatrixResultBuilder()
