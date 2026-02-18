@@ -1183,11 +1183,8 @@ func (t *Loki) initQueryFrontendMiddleware() (_ services.Service, err error) {
 		}
 
 		v2Router = queryrange.RouterConfig{
-			Enabled: true,
-
-			Start: start,
-			Lag:   t.Cfg.QueryEngine.StorageLag,
-
+			Enabled:  true,
+			V2Range:  t.Cfg.QueryEngine.ValidQueryRange,
 			Validate: engine_v2.IsQuerySupported,
 			Handler:  handler,
 		}
@@ -1431,7 +1428,7 @@ func (t *Loki) initV2QueryEngine() (services.Service, error) {
 		Logger:     logger,
 		Registerer: prometheus.DefaultRegisterer,
 
-		Config: t.Cfg.QueryEngine.Executor,
+		Config: t.Cfg.QueryEngine,
 
 		Scheduler: t.queryEngineV2Scheduler,
 		Limits:    t.Overrides,

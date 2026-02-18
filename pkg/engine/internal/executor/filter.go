@@ -21,6 +21,11 @@ func NewFilterPipeline(filter *physical.Filter, input Pipeline, evaluator *expre
 			return nil, err
 		}
 
+		if batch.NumRows() == 0 {
+			// Nothing to process, return an empty record with the same schema
+			return batch, nil
+		}
+
 		cols := make([]*array.Boolean, 0, len(filter.Predicates))
 
 		for i, pred := range filter.Predicates {
@@ -134,11 +139,10 @@ func filterBatch(batch arrow.RecordBatch, include func(int) bool) arrow.RecordBa
 		ct++
 	}
 
-	schema := arrow.NewSchema(fields, nil)
 	arrays := make([]arrow.Array, len(fields))
 	for i, builder := range builders {
 		arrays[i] = builder.NewArray()
 	}
 
-	return array.NewRecordBatch(schema, arrays, ct)
+	return array.NewRecordBatch(batch.Schema(), arrays, ct)
 }

@@ -67,8 +67,8 @@ Pass the `-config.expand-env` flag at the command line to enable this way of set
 ### Generic placeholders
 
 - `<boolean>` : a boolean that can take the values `true` or `false`
-- `<int>` : any integer matching the regular expression `[1-9]+[0-9]*`
-- `<duration>` : a duration matching the regular expression `[0-9]+(ns|us|µs|ms|[smh])`
+- `<int>` : A plain integer (for example, `0`, `1024`, `5000`) or a size in bytes with optional unit suffix (for example, `1024`, `256KB`, `64MB`, `4GB`). Supported units: `B`, `KB`, `MB`, `GB`, `TB`, `PB`, `EB`. 
+- `<duration>` : a duration with required unit suffix. Supported units: `ms`, `s`, `m`, `h`, `d`, `w`, `y `(for example, `30s`, `5m`, `1h`, `1d`, `1w`). Note: `0` is allowed without a unit. Some fields using Go's native duration type may also support `ns` and `us`/`µs` but not `d`, `w`, `y`.
 - `<labelname>` : a string matching the regular expression `[a-zA-Z_][a-zA-Z0-9_]*`
 - `<labelvalue>` : a string of unicode characters
 - `<filename>` : a valid path relative to current working directory or an absolute path.
@@ -361,6 +361,12 @@ query_engine:
   # CLI flag: -query-engine.storage-start-date
   [storage_start_date: <time> | default = 0]
 
+  # Lifecycle of data objects in days. If set, queries falling outside of the
+  # retention period will not be supported. When both storage-start-date and
+  # storage-retention-days are set, the more restrictive of the two will apply.
+  # CLI flag: -query-engine.storage-retention-days
+  [storage_retention_days: <int> | default = 0]
+
   # Enable routing of query splits in the query frontend to the next generation
   # engine when they fall within the configured time range.
   # CLI flag: -query-engine.enable-engine-router
@@ -376,6 +382,16 @@ query_engine:
   # considering delete requests.
   # CLI flag: -query-engine.enable-delete-req-filtering
   [enable_delete_req_filtering: <boolean> | default = true]
+
+  # Enforce tenant retention limits. Queries falling outside tenant's retention
+  # period are either adjusted or rejected.
+  # CLI flag: -query-engine.enforce-retention-period
+  [enforce_retention_period: <boolean> | default = false]
+
+  # Experimental: When enabled, the tenant's MaxQuerySeries limit is applied.
+  # Otherwise, no limit is enforced.
+  # CLI flag: -query-engine.enforce-max-query-series-limit
+  [enforce_max_query_series_limit: <boolean> | default = false]
 
 # The query_scheduler block configures the Loki query scheduler. When configured
 # it separates the tenant query queues from the query-frontend.
@@ -1419,9 +1435,9 @@ dataobj:
       # CLI flag: -dataobj-consumer.partition-ring.delete-inactive-partition-after
       [delete_inactive_partition_after: <duration> | default = 13h]
 
-      # The size of the cache used for shuffle sharding. If zero or negative, an
-      # unbounded cache is used. If positive, an LRU cache with the specified
-      # size is used.
+      # Experimental: The size of the cache used for shuffle sharding. If zero
+      # or negative, an unbounded cache is used. If positive, an LRU cache with
+      # the specified size is used.
       # CLI flag: -dataobj-consumer.partition-ring.shuffle-shard-cache-size
       [shuffle_shard_cache_size: <int> | default = 0]
 
@@ -4118,9 +4134,9 @@ kafka_ingestion:
     # CLI flag: -ingester.partition-ring.delete-inactive-partition-after
     [delete_inactive_partition_after: <duration> | default = 13h]
 
-    # The size of the cache used for shuffle sharding. If zero or negative, an
-    # unbounded cache is used. If positive, an LRU cache with the specified size
-    # is used.
+    # Experimental: The size of the cache used for shuffle sharding. If zero or
+    # negative, an unbounded cache is used. If positive, an LRU cache with the
+    # specified size is used.
     # CLI flag: -ingester.partition-ring.shuffle-shard-cache-size
     [shuffle_shard_cache_size: <int> | default = 0]
 ```
