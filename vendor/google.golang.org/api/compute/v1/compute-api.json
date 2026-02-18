@@ -20556,7 +20556,7 @@
     "organizationSecurityPolicies": {
       "methods": {
         "addAssociation": {
-          "description": "Inserts an association for the specified security policy.\n\nThis has billing implications.  Projects in the hierarchy with effective\nhierarchical security policies will be automatically enrolled into Cloud\nArmor Enterprise if not already enrolled.\n\nUse of this API to modify firewall policies is deprecated. Use\nfirewallPolicies.addAssociation instead if possible.",
+          "description": "Inserts an association for the specified security policy.\n\nThis has billing implications.  Projects in the hierarchy with effective\nhierarchical security policies will be automatically enrolled into Cloud\nArmor Enterprise if not already enrolled.\n\nUse this API to modify Cloud Armor policies. Previously, alpha and beta\nversions of this API were used to modify firewall policies. This usage is\nnow disabled for most organizations. Use firewallPolicies.addAssociation\ninstead.",
           "flatPath": "locations/global/securityPolicies/{securityPolicy}/addAssociation",
           "httpMethod": "POST",
           "id": "compute.organizationSecurityPolicies.addAssociation",
@@ -20595,7 +20595,7 @@
           ]
         },
         "addRule": {
-          "description": "Inserts a rule into a security policy.",
+          "description": "Inserts a rule into a security policy.\n\nUse this API to modify Cloud Armor policies. Previously, alpha and beta\nversions of this API were used to modify firewall policies. This usage is\nnow disabled for most organizations. Use firewallPolicies.addRule instead.",
           "flatPath": "locations/global/securityPolicies/{securityPolicy}/addRule",
           "httpMethod": "POST",
           "id": "compute.organizationSecurityPolicies.addRule",
@@ -20629,7 +20629,7 @@
           ]
         },
         "copyRules": {
-          "description": "Copies rules to the specified security policy.\n\nUse of this API to modify firewall policies is deprecated. Use\nfirewallPolicies.copyRules instead.",
+          "description": "Copies rules to the specified security policy.\n\nUse this API to modify Cloud Armor policies. Previously, alpha and beta\nversions of this API were used to modify firewall policies. This usage is\nnow disabled for most organizations. Use firewallPolicies.cloneRules\ninstead.",
           "flatPath": "locations/global/securityPolicies/{securityPolicy}/copyRules",
           "httpMethod": "POST",
           "id": "compute.organizationSecurityPolicies.copyRules",
@@ -20665,7 +20665,7 @@
           ]
         },
         "delete": {
-          "description": "Deletes the specified policy.\n\nUse of this API to remove firewall policies is deprecated. Use\nfirewallPolicies.delete instead.",
+          "description": "Deletes the specified policy.\n\nUse this API to remove Cloud Armor policies. Previously, alpha and beta\nversions of this API were used to remove firewall policies. This usage is\nnow disabled for most organizations. Use firewallPolicies.delete instead.",
           "flatPath": "locations/global/securityPolicies/{securityPolicy}",
           "httpMethod": "DELETE",
           "id": "compute.organizationSecurityPolicies.delete",
@@ -20696,7 +20696,7 @@
           ]
         },
         "get": {
-          "description": "List all of the ordered rules present in a single specified policy.\n\nUse of this API to read firewall policies is deprecated. Use\nfirewallPolicies.get instead.",
+          "description": "List all of the ordered rules present in a single specified policy.\n\nUse this API to read Cloud Armor policies. Previously, alpha and beta\nversions of this API were used to read firewall policies. This usage is now\ndisabled for most organizations. Use firewallPolicies.get instead.",
           "flatPath": "locations/global/securityPolicies/{securityPolicy}",
           "httpMethod": "GET",
           "id": "compute.organizationSecurityPolicies.get",
@@ -20723,7 +20723,7 @@
           ]
         },
         "getAssociation": {
-          "description": "Gets an association with the specified name.\n\nUse of this API to read firewall policies is deprecated. Use\nfirewallPolicies.getAssociation instead if possible.",
+          "description": "Gets an association with the specified name.\n\nUse this API to read Cloud Armor policies. Previously, alpha and beta\nversions of this API were used to read firewall policies. This usage is\nnow disabled for most organizations. Use firewallPolicies.getAssociation\ninstead.",
           "flatPath": "locations/global/securityPolicies/{securityPolicy}/getAssociation",
           "httpMethod": "GET",
           "id": "compute.organizationSecurityPolicies.getAssociation",
@@ -20755,7 +20755,7 @@
           ]
         },
         "getRule": {
-          "description": "Gets a rule at the specified priority.\n\nUse of this API to read firewall policies is deprecated. Use\nfirewallPolicies.getRule instead.",
+          "description": "Gets a rule at the specified priority.\n\nUse this API to read Cloud Armor policies. Previously, alpha and beta\nversions of this API were used to read firewall policies. This usage is now\ndisabled for most organizations. Use firewallPolicies.getRule instead.",
           "flatPath": "locations/global/securityPolicies/{securityPolicy}/getRule",
           "httpMethod": "GET",
           "id": "compute.organizationSecurityPolicies.getRule",
@@ -20788,7 +20788,7 @@
           ]
         },
         "insert": {
-          "description": "Creates a new policy in the specified organization using the data included\nin the request.\n\nUse of this API to insert firewall policies is deprecated. Use\nfirewallPolicies.insert instead.",
+          "description": "Creates a new policy in the specified organization using the data included\nin the request.\n\nUse this API to add Cloud Armor policies. Previously, alpha and beta\nversions of this API were used to add firewall policies. This usage is now\ndisabled for most organizations. Use firewallPolicies.insert instead.",
           "flatPath": "locations/global/securityPolicies",
           "httpMethod": "POST",
           "id": "compute.organizationSecurityPolicies.insert",
@@ -20817,7 +20817,7 @@
           ]
         },
         "list": {
-          "description": "List all the policies that have been configured for the specified\norganization.\n\nUse of this API to read firewall policies is deprecated. Use\nfirewallPolicies.list instead.",
+          "description": "List all the policies that have been configured for the specified\norganization.\n\nUse this API to read Cloud Armor policies. Previously, alpha and beta\nversions of this API were used to read firewall policies. This usage is now\ndisabled for most organizations. Use firewallPolicies.list instead.",
           "flatPath": "locations/global/securityPolicies",
           "httpMethod": "GET",
           "id": "compute.organizationSecurityPolicies.list",
@@ -20867,7 +20867,7 @@
           ]
         },
         "listAssociations": {
-          "description": "Lists associations of a specified target, i.e., organization or folder.\n\nUse of this API to read firewall policies is deprecated. Use\nfirewallPolicies.listAssociations instead if possible.",
+          "description": "Lists associations of a specified target, i.e., organization or folder.\n\nUse this API to read Cloud Armor policies. Previously, alpha and beta\nversions of this API were used to read firewall policies. This usage is\nnow disabled for most organizations. Use firewallPolicies.listAssociations\ninstead.",
           "flatPath": "locations/global/securityPolicies/listAssociations",
           "httpMethod": "GET",
           "id": "compute.organizationSecurityPolicies.listAssociations",
@@ -20939,7 +20939,7 @@
           ]
         },
         "move": {
-          "description": "Moves the specified security policy.\n\nUse of this API to modify firewall policies is deprecated. Use\nfirewallPolicies.move instead.",
+          "description": "Moves the specified security policy.\n\nUse this API to modify Cloud Armor policies. Previously, alpha and beta\nversions of this API were used to modify firewall policies. This usage is\nnow disabled for most organizations. Use firewallPolicies.move instead.",
           "flatPath": "locations/global/securityPolicies/{securityPolicy}/move",
           "httpMethod": "POST",
           "id": "compute.organizationSecurityPolicies.move",
@@ -20975,7 +20975,7 @@
           ]
         },
         "patch": {
-          "description": "Patches the specified policy with the data included in the request.\n\nUse of this API to modify firewall policies is deprecated. Use\nfirewallPolicies.patch instead.",
+          "description": "Patches the specified policy with the data included in the request.\n\nUse this API to modify Cloud Armor policies. Previously, alpha and beta\nversions of this API were used to modify firewall policies. This usage is\nnow disabled for most organizations. Use firewallPolicies.patch instead.",
           "flatPath": "locations/global/securityPolicies/{securityPolicy}",
           "httpMethod": "PATCH",
           "id": "compute.organizationSecurityPolicies.patch",
@@ -21009,7 +21009,7 @@
           ]
         },
         "patchRule": {
-          "description": "Patches a rule at the specified priority.\n\nUse of this API to modify firewall policies is deprecated. Use\nfirewallPolicies.patchRule instead.",
+          "description": "Patches a rule at the specified priority.\n\nUse this API to modify Cloud Armor policies. Previously, alpha and beta\nversions of this API were used to modify firewall policies. This usage is\nnow disabled for most organizations. Use firewallPolicies.patchRule\ninstead.",
           "flatPath": "locations/global/securityPolicies/{securityPolicy}/patchRule",
           "httpMethod": "POST",
           "id": "compute.organizationSecurityPolicies.patchRule",
@@ -21049,7 +21049,7 @@
           ]
         },
         "removeAssociation": {
-          "description": "Removes an association for the specified security policy.\n\nUse of this API to modify firewall policies is deprecated. Use\nfirewallPolicies.removeAssociation instead if possible.",
+          "description": "Removes an association for the specified security policy.\n\nUse this API to modify Cloud Armor policies. Previously, alpha and beta\nversions of this API were used to modify firewall policies. This usage is\nnow disabled for most organizations. Use firewallPolicies.removeAssociation\ninstead.",
           "flatPath": "locations/global/securityPolicies/{securityPolicy}/removeAssociation",
           "httpMethod": "POST",
           "id": "compute.organizationSecurityPolicies.removeAssociation",
@@ -21085,7 +21085,7 @@
           ]
         },
         "removeRule": {
-          "description": "Deletes a rule at the specified priority.",
+          "description": "Deletes a rule at the specified priority.\n\nUse this API to modify Cloud Armor policies. Previously, alpha and beta\nversions of this API were used to modify firewall policies. This usage is\nnow disabled for most organizations. Use firewallPolicies.removeRule\ninstead.",
           "flatPath": "locations/global/securityPolicies/{securityPolicy}/removeRule",
           "httpMethod": "POST",
           "id": "compute.organizationSecurityPolicies.removeRule",
@@ -42423,7 +42423,7 @@
       }
     }
   },
-  "revision": "20251019",
+  "revision": "20251031",
   "rootUrl": "https://compute.googleapis.com/",
   "schemas": {
     "AWSV4Signature": {
@@ -47842,6 +47842,7 @@
             "GENERAL_PURPOSE_N2",
             "GENERAL_PURPOSE_N2D",
             "GENERAL_PURPOSE_N4",
+            "GENERAL_PURPOSE_N4D",
             "GENERAL_PURPOSE_T2D",
             "GRAPHICS_OPTIMIZED",
             "MEMORY_OPTIMIZED",
@@ -47855,6 +47856,7 @@
             "TYPE_UNSPECIFIED"
           ],
           "enumDescriptions": [
+            "",
             "",
             "",
             "",
@@ -55155,7 +55157,7 @@
           "description": "The header value must be an integer and its value must be in the range\nspecified in rangeMatch. If the header does not contain an\ninteger, number or is empty, the match fails.\n\nFor example for a range [-5, 0]\n   \n   \n      - -3 will match.\n      - 0 will not match.\n      - 0.25 will not match.\n      - -3someString will not match.\n\nOnly one of exactMatch, prefixMatch,suffixMatch, regexMatch,presentMatch or rangeMatch must be set.\n\nrangeMatch is not supported for load balancers\nthat have loadBalancingScheme set to EXTERNAL."
         },
         "regexMatch": {
-          "description": "The value of the header must match the regular expression specified inregexMatch.\nFor more information about regular expression syntax, see Syntax.\n\nFor matching against a port specified in the HTTP request, use a\nheaderMatch with headerName set to PORT and a regular expression that\nsatisfies the RFC2616 Host header's port specifier.\n\nOnly one of exactMatch, prefixMatch,suffixMatch, regexMatch,presentMatch or rangeMatch must be set.\n\nRegular expressions can only be used when the loadBalancingScheme is\nset to INTERNAL_SELF_MANAGED.",
+          "description": "The value of the header must match the regular expression specified inregexMatch.\nFor more information about regular expression syntax, see Syntax.\n\nFor matching against a port specified in the HTTP request, use a\nheaderMatch with headerName set to PORT and a regular expression that\nsatisfies the RFC2616 Host header's port specifier.\n\nOnly one of exactMatch, prefixMatch,suffixMatch, regexMatch,presentMatch or rangeMatch must be set.\n\nRegular expressions can only be used when the loadBalancingScheme is\nset to INTERNAL_SELF_MANAGED, EXTERNAL_MANAGED orINTERNAL_MANAGED.",
           "type": "string"
         },
         "suffixMatch": {
@@ -55423,7 +55425,7 @@
           "type": "boolean"
         },
         "regexMatch": {
-          "description": "The queryParameterMatch matches if the value of the\nparameter matches the regular expression specified byregexMatch. For\nmore information about regular expression syntax, see Syntax.\n\nOnly one of presentMatch, exactMatch, orregexMatch must be set.\n\nRegular expressions can only be used when the loadBalancingScheme is\nset to INTERNAL_SELF_MANAGED.",
+          "description": "The queryParameterMatch matches if the value of the\nparameter matches the regular expression specified byregexMatch. For\nmore information about regular expression syntax, see Syntax.\n\nOnly one of presentMatch, exactMatch, orregexMatch must be set.\n\nRegular expressions can only be used when the loadBalancingScheme is\nset to INTERNAL_SELF_MANAGED, EXTERNAL_MANAGED orINTERNAL_MANAGED.",
           "type": "string"
         }
       },
@@ -55586,7 +55588,7 @@
       "id": "HttpRouteRuleMatch",
       "properties": {
         "fullPathMatch": {
-          "description": "For satisfying the matchRule condition, the path of the\nrequest must exactly match the value specified infullPathMatch after removing any query parameters and anchor\nthat may be part of the original URL.\n\nfullPathMatch must be from 1 to 1024 characters.\n\nOnly one of prefixMatch, fullPathMatch or regexMatch must be\nspecified.",
+          "description": "For satisfying the matchRule condition, the path of the\nrequest must exactly match the value specified infullPathMatch after removing any query parameters and anchor\nthat may be part of the original URL.\n\nfullPathMatch must be from 1 to 1024 characters.\n\nOnly one of prefixMatch, fullPathMatch,regexMatch or path_template_match must be\nspecified.",
           "type": "string"
         },
         "headerMatches": {
@@ -55612,7 +55614,7 @@
           "type": "string"
         },
         "prefixMatch": {
-          "description": "For satisfying the matchRule condition, the request's\npath must begin with the specified prefixMatch.prefixMatch must begin with a /.\n\nThe value must be from 1 to 1024 characters.\n\nOnly one of prefixMatch, fullPathMatch or regexMatch must be\nspecified.",
+          "description": "For satisfying the matchRule condition, the request's\npath must begin with the specified prefixMatch.prefixMatch must begin with a /.\n\nThe value must be from 1 to 1024 characters.\n\nOnly one of prefixMatch, fullPathMatch,regexMatch or path_template_match must be\nspecified.\nspecified.",
           "type": "string"
         },
         "queryParameterMatches": {
@@ -55623,7 +55625,7 @@
           "type": "array"
         },
         "regexMatch": {
-          "description": "For satisfying the matchRule condition, the path of the\nrequest must satisfy the regular expression specified inregexMatch after removing any query parameters and anchor\nsupplied with the original URL. For\nmore information about regular expression syntax, see Syntax.\n\nOnly one of prefixMatch, fullPathMatch orregexMatch must be\nspecified.\n\nRegular expressions can only be used when the loadBalancingScheme is\nset to INTERNAL_SELF_MANAGED.",
+          "description": "For satisfying the matchRule condition, the path of the\nrequest must satisfy the regular expression specified inregexMatch after removing any query parameters and anchor\nsupplied with the original URL. For\nmore information about regular expression syntax, see Syntax.\n\nOnly one of prefixMatch, fullPathMatch,regexMatch or path_template_match must be\nspecified.\n\nRegular expressions can only be used when the loadBalancingScheme is\nset to INTERNAL_SELF_MANAGED, EXTERNAL_MANAGED orINTERNAL_MANAGED.",
           "type": "string"
         }
       },
@@ -83740,6 +83742,10 @@
         "name": {
           "description": "Name of the resource. Provided by the client when the resource is created.\nThe name must be 1-63 characters long, and comply withRFC1035.\nSpecifically, the name must be 1-63 characters long and match the regular\nexpression `[a-z]([-a-z0-9]*[a-z0-9])?` which means the first\ncharacter must be a lowercase letter, and all following characters must\nbe a dash, lowercase letter, or digit, except the last character, which\ncannot be a dash.",
           "pattern": "[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?",
+          "type": "string"
+        },
+        "parent": {
+          "description": "[Output Only] The parent of the security policy.",
           "type": "string"
         },
         "recaptchaOptionsConfig": {
