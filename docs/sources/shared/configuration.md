@@ -576,6 +576,24 @@ pattern_ingester:
 
         [client_secret_ref: <string> | default = ""]
 
+        [client_certificate_key_id: <string> | default = ""]
+
+        [client_certificate_key: <string> | default = ""]
+
+        [client_certificate_key_file: <string> | default = ""]
+
+        [client_certificate_key_ref: <string> | default = ""]
+
+        [grant_type: <string> | default = ""]
+
+        [signature_algorithm: <string> | default = ""]
+
+        [iss: <string> | default = ""]
+
+        [audience: <string> | default = ""]
+
+        [claims: <map of string to >]
+
         [scopes: <list of strings>]
 
         [token_url: <string> | default = ""]
@@ -739,6 +757,24 @@ pattern_ingester:
         [client_secret_file: <string> | default = ""]
 
         [client_secret_ref: <string> | default = ""]
+
+        [client_certificate_key_id: <string> | default = ""]
+
+        [client_certificate_key: <string> | default = ""]
+
+        [client_certificate_key_file: <string> | default = ""]
+
+        [client_certificate_key_ref: <string> | default = ""]
+
+        [grant_type: <string> | default = ""]
+
+        [signature_algorithm: <string> | default = ""]
+
+        [iss: <string> | default = ""]
+
+        [audience: <string> | default = ""]
+
+        [claims: <map of string to >]
 
         [scopes: <list of strings>]
 
@@ -3152,6 +3188,14 @@ dataobj_tee:
   # Maximum number of bytes to buffer.
   # CLI flag: -distributor.dataobj-tee.max-buffered-bytes
   [max_buffered_bytes: <int> | default = 104857600]
+
+  # The per-tenant partition rate (bytes/sec).
+  # CLI flag: -distributor.dataobj-tee.per-partition-rate-bytes
+  [per_partition_rate_bytes: <int> | default = 1048576]
+
+  # Enables optional debug metrics.
+  # CLI flag: -distributor.dataobj-tee.debug-metrics-enabled
+  [debug_metrics_enabled: <boolean> | default = false]
 ```
 
 ### etcd
@@ -4694,6 +4738,20 @@ otlp_config:
 
 # List of LogQL vector and range aggregations that should be sharded.
 [shard_aggregations: <list of strings>]
+
+# Default list of JSON fields to tokenize for pattern detection. It is recommend
+# to append to or delete from the defaults rather than replacing them.
+# CLI flag: -limits.pattern-ingester-tokenizable-json-fields
+[pattern_ingester_tokenizable_json_fields_default: <string> | default = "log,message,msg,msg_,_msg,content"]
+
+# List of additional JSON fields to tokenize for pattern detection.
+# CLI flag: -limits.pattern-ingester-tokenizable-json-fields-append
+[pattern_ingester_tokenizable_json_fields_append: <string> | default = ""]
+
+# List of JSON fields to excluded from the defaults to tokenize for pattern
+# detection.
+# CLI flag: -limits.pattern-ingester-tokenizable-json-fields-delete
+[pattern_ingester_tokenizable_json_fields_delete: <string> | default = ""]
 
 # Enable metric aggregation. When enabled, pushed streams will be sampled for
 # bytes and line counts. These metrics will be written back into Loki as a
