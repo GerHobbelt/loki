@@ -34,7 +34,7 @@ type builder interface {
 	Flush() (*dataobj.Object, io.Closer, error)
 	TimeRanges() []multitenancy.TimeRange
 	UnregisterMetrics(prometheus.Registerer)
-	CopyAndSort(obj *dataobj.Object) (*dataobj.Object, io.Closer, error)
+	CopyAndSort(ctx context.Context, obj *dataobj.Object) (*dataobj.Object, io.Closer, error)
 }
 
 // committer allows mocking of certain [kgo.Client] methods in tests.
@@ -261,6 +261,7 @@ func (p *partitionProcessor) processRecord(ctx context.Context, record *kgo.Reco
 	if p.shouldFlushDueToMaxAge() {
 		p.metrics.incFlushesTotal(FlushReasonMaxAge)
 		if err := p.flushAndCommit(ctx); err != nil {
+			p.metrics.flushFailures.Inc()
 			level.Error(p.logger).Log("msg", "failed to flush and commit dataobj that reached max age", "err", err)
 			return
 		}
@@ -275,6 +276,7 @@ func (p *partitionProcessor) processRecord(ctx context.Context, record *kgo.Reco
 
 		p.metrics.incFlushesTotal(FlushReasonBuilderFull)
 		if err := p.flushAndCommit(ctx); err != nil {
+			p.metrics.flushFailures.Inc()
 			level.Error(p.logger).Log("msg", "failed to flush and commit", "err", err)
 			return
 		}
@@ -328,7 +330,7 @@ func (p *partitionProcessor) flush(ctx context.Context) error {
 		return err
 	}
 
-	obj, closer, err = p.sort(obj, closer)
+	obj, closer, err = p.sort(ctx, obj, closer)
 	if err != nil {
 		level.Error(p.logger).Log("msg", "failed to sort dataobj", "err", err)
 		return err
@@ -354,7 +356,7 @@ func (p *partitionProcessor) flush(ctx context.Context) error {
 	return nil
 }
 
-func (p *partitionProcessor) sort(obj *dataobj.Object, closer io.Closer) (*dataobj.Object, io.Closer, error) {
+func (p *partitionProcessor) sort(ctx context.Context, obj *dataobj.Object, closer io.Closer) (*dataobj.Object, io.Closer, error) {
 	defer closer.Close()
 
 	start := time.Now()
@@ -362,7 +364,7 @@ func (p *partitionProcessor) sort(obj *dataobj.Object, closer io.Closer) (*datao
 		level.Debug(p.logger).Log("msg", "partition processor sorted logs object-wide", "duration", time.Since(start))
 	}()
 
-	return p.builder.CopyAndSort(obj)
+	return p.builder.CopyAndSort(ctx, obj)
 }
 
 // commits the offset of the last record processed. It should be called after
@@ -403,6 +405,7 @@ func (p *partitionProcessor) idleFlush(ctx context.Context) (bool, error) {
 	}
 	p.metrics.incFlushesTotal(FlushReasonIdle)
 	if err := p.flushAndCommit(ctx); err != nil {
+		p.metrics.flushFailures.Inc()
 		return false, err
 	}
 	return true, nil
