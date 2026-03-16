@@ -17,6 +17,21 @@ keywords: []
 
 This is the generated reference for the Loki Helm Chart values.
 
+Because the Loki Helm chart exposes a large number of configuration options, this reference is intentionally exhaustive and can be quite long.
+
+Configuration keys are grouped by prefix. For example:
+
+- `adminApi.*` — configuration for the admin API component
+- `backend.*` — configuration for backend pods
+- `backend.persistence.*` — storage configuration for backend pods
+- `backend.autoscaling.*` — autoscaling configuration for backend pods
+
+To navigate it more easily:
+
+- Use your browser search (`Ctrl+F`) to locate specific configuration keys.
+- Search by prefix (for example `backend.` or `ingester.`) to jump between related settings.
+- For installation examples and setup instructions, refer to the Helm installation guide rather than this reference page.
+
 > **Note:** This reference is for the Loki Helm chart version 3.0 or greater.
 > If you are using the `grafana/loki-stack` Helm chart from the community repo,
 > please refer to the `values.yaml` of the respective Github repository
@@ -2191,6 +2206,15 @@ null
 </td>
 		</tr>
 		<tr>
+			<td>chunksCache.allocatedCPU</td>
+			<td>string</td>
+			<td>Amount of cpu allocated to chunks-cache for object storage (in integer or millicores).</td>
+			<td><pre lang="json">
+"500m"
+</pre>
+</td>
+		</tr>
+		<tr>
 			<td>chunksCache.allocatedMemory</td>
 			<td>int</td>
 			<td>Amount of memory allocated to chunks-cache for object storage (in MB).</td>
@@ -2324,6 +2348,7 @@ true
 {
   "addresses": "dnssrvnoa+_memcached-client._tcp.{{ include \"loki.resourceName\" (dict \"ctx\" $ \"component\" \"chunks-cache\" \"suffix\" $.Values.chunksCache.l2.suffix ) }}.{{ include \"loki.namespace\" $ }}.svc.{{ .Values.global.clusterDomain }}",
   "affinity": {},
+  "allocatedCPU": "500m",
   "allocatedMemory": 8192,
   "annotations": {},
   "batchSize": 4,
@@ -2392,6 +2417,15 @@ true
 			<td>Affinity for chunks-cache-l2 pods</td>
 			<td><pre lang="json">
 {}
+</pre>
+</td>
+		</tr>
+		<tr>
+			<td>chunksCache.l2.allocatedCPU</td>
+			<td>string</td>
+			<td>Amount of cpu allocated to chunks-cache-l2 for object storage (in integer or millicores).</td>
+			<td><pre lang="json">
+"500m"
 </pre>
 </td>
 		</tr>
@@ -3046,6 +3080,15 @@ null
 			<td>Overrides the chart's cluster label</td>
 			<td><pre lang="json">
 null
+</pre>
+</td>
+		</tr>
+		<tr>
+			<td>commonLabels</td>
+			<td>object</td>
+			<td>Labels to be added to resources</td>
+			<td><pre lang="json">
+{}
 </pre>
 </td>
 		</tr>
@@ -3984,7 +4027,7 @@ null
     "pullPolicy": "IfNotPresent",
     "registry": "docker.io",
     "repository": "grafana/enterprise-logs",
-    "tag": "3.6.5"
+    "tag": "3.6.7"
   },
   "license": {
     "contents": "NOTAVALIDLICENSE"
@@ -4020,7 +4063,7 @@ null
     "tolerations": []
   },
   "useExternalLicense": false,
-  "version": "3.6.3"
+  "version": "3.6.5"
 }
 </pre>
 </td>
@@ -4131,7 +4174,7 @@ null
 			<td>string</td>
 			<td>Docker image tag</td>
 			<td><pre lang="json">
-"3.6.5"
+"3.6.7"
 </pre>
 </td>
 		</tr>
@@ -7154,7 +7197,7 @@ null
 			<td>string</td>
 			<td>Overrides the image tag whose default is the chart's appVersion</td>
 			<td><pre lang="json">
-"3.6.5"
+"3.6.7"
 </pre>
 </td>
 		</tr>
@@ -11683,6 +11726,15 @@ null
 </td>
 		</tr>
 		<tr>
+			<td>resultsCache.allocatedCPU</td>
+			<td>string</td>
+			<td>Amount of cpu allocated to results-cache for object storage (in integer or millicores).</td>
+			<td><pre lang="json">
+"500m"
+</pre>
+</td>
+		</tr>
+		<tr>
 			<td>resultsCache.allocatedMemory</td>
 			<td>int</td>
 			<td>Amount of memory allocated to results-cache for object storage (in MB).</td>
@@ -12563,6 +12615,15 @@ null
 </td>
 		</tr>
 		<tr>
+			<td>sidecar.disableX509StrictVerification</td>
+			<td>bool</td>
+			<td>Set to true to disable strict x509 verification for kube api calls.</td>
+			<td><pre lang="json">
+false
+</pre>
+</td>
+		</tr>
+		<tr>
 			<td>sidecar.enableUniqueFilenames</td>
 			<td>bool</td>
 			<td>Ensure that rule files aren't conflicting and being overwritten by prefixing their name with the namespace they are defined in.</td>
@@ -12612,7 +12673,7 @@ false
 			<td>string</td>
 			<td>Docker image tag</td>
 			<td><pre lang="json">
-"1.30.9"
+"2.5.0"
 </pre>
 </td>
 		</tr>
