@@ -640,6 +640,7 @@ func (m *ObjectMetastore) IndexSectionsReader(ctx context.Context, req IndexSect
 		req.SectionsRequest.Predicates,
 		req.BatchSize,
 	)
+	reader.metrics = m.metrics
 
 	return IndexSectionsReaderResponse{Reader: reader}, nil
 }
@@ -678,7 +679,7 @@ func (m *ObjectMetastore) GetIndexes(ctx context.Context, req GetIndexesRequest)
 	resp.Indexes = indexEntries
 
 	m.metrics.indexObjectsTotal.Observe(float64(len(indexEntries)))
-	span.Record(xcap.StatMetastoreIndexObjects.Observe(int64(len(indexEntries))))
+	span.Record(StatMetastoreIndexObjects.Observe(int64(len(indexEntries))))
 
 	return resp, nil
 }
