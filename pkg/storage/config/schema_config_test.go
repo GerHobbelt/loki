@@ -18,98 +18,6 @@ import (
 	"github.com/grafana/loki/v3/pkg/storage/types"
 )
 
-func TestChunkTableFor(t *testing.T) {
-	tablePeriod, err := time.ParseDuration("168h")
-	require.NoError(t, err)
-
-	periodConfigs := []PeriodConfig{
-		{
-			From: MustParseDayTime("1970-01-01"),
-			IndexTables: IndexPeriodicTableConfig{
-				PeriodicTableConfig: PeriodicTableConfig{
-					Prefix: "index_1_",
-					Period: tablePeriod,
-				}},
-			ChunkTables: PeriodicTableConfig{
-				Prefix: "chunks_1_",
-				Period: tablePeriod,
-			},
-		},
-		{
-			From: MustParseDayTime("2019-01-02"),
-			IndexTables: IndexPeriodicTableConfig{
-				PeriodicTableConfig: PeriodicTableConfig{
-					Prefix: "index_2_",
-					Period: tablePeriod,
-				}},
-			ChunkTables: PeriodicTableConfig{
-				Prefix: "chunks_2_",
-				Period: tablePeriod,
-			},
-		},
-		{
-			From: MustParseDayTime("2019-03-06"),
-			IndexTables: IndexPeriodicTableConfig{
-				PeriodicTableConfig: PeriodicTableConfig{
-					Prefix: "index_3_",
-					Period: tablePeriod,
-				}},
-			ChunkTables: PeriodicTableConfig{
-				Prefix: "chunks_3_",
-				Period: tablePeriod,
-			},
-		},
-	}
-
-	schemaCfg := SchemaConfig{
-		Configs: periodConfigs,
-	}
-
-	testCases := []struct {
-		timeStr    string // RFC3339
-		chunkTable string
-	}{
-		{
-			timeStr:    "1970-01-01T00:00:00Z",
-			chunkTable: "chunks_1_0",
-		},
-		{
-			timeStr:    "1970-01-01T00:00:01Z",
-			chunkTable: "chunks_1_0",
-		},
-		{
-			timeStr:    "2019-01-01T00:00:00Z",
-			chunkTable: "chunks_1_2556",
-		},
-		{
-			timeStr:    "2019-01-01T23:59:59Z",
-			chunkTable: "chunks_1_2556",
-		},
-		{
-			timeStr:    "2019-01-02T00:00:00Z",
-			chunkTable: "chunks_2_2556",
-		},
-		{
-			timeStr:    "2019-03-06T00:00:00Z",
-			chunkTable: "chunks_3_2565",
-		},
-		{
-			timeStr:    "2020-03-06T00:00:00Z",
-			chunkTable: "chunks_3_2618",
-		},
-	}
-
-	for _, tc := range testCases {
-		ts, err := time.Parse(time.RFC3339, tc.timeStr)
-		require.NoError(t, err)
-
-		table, err := schemaCfg.ChunkTableFor(model.TimeFromUnix(ts.Unix()))
-		require.NoError(t, err)
-
-		require.Equal(t, tc.chunkTable, table)
-	}
-}
-
 func TestSchemaConfig_Validate(t *testing.T) {
 	t.Parallel()
 
@@ -405,6 +313,32 @@ func TestPeriodConfig_Validate(t *testing.T) {
 			} else {
 				require.ErrorContains(t, tc.in.validate(), tc.err)
 			}
+		})
+	}
+}
+
+func TestDayTime_UnmarshalYAML(t *testing.T) {
+	// Regression test for go yaml v4: an unquoted date such as `2023-01-01`
+	// is resolved to the `!!timestamp` tag. Decoding such a node into a
+	// string fails with:
+	//   yaml: construct errors: line 1: cannot construct !!timestamp `2023-01-01` into string
+	// so DayTime.UnmarshalYAML must read the raw scalar value instead of
+	// decoding the node into a string.
+	expected := MustParseDayTime("2023-01-01")
+
+	for _, tc := range []struct {
+		name string
+		in   string
+	}{
+		{name: "unquoted", in: `2023-01-01`},
+		{name: "double-quoted", in: `"2023-01-01"`},
+		{name: "single-quoted", in: `'2023-01-01'`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var d DayTime
+			err := yaml.Unmarshal([]byte(tc.in), &d)
+			require.NoError(t, err)
+			require.Equal(t, expected, d)
 		})
 	}
 }
@@ -718,69 +652,6 @@ func TestActiveIndexType(t *testing.T) {
 	assert.Equal(t, 1, ActivePeriodConfig(cfg.Configs))
 }
 
-func TestTableRanges_TableInRange(t *testing.T) {
-	tableRanges := TableRanges{
-		TableRange{
-			Start: 1,
-			End:   10,
-			PeriodConfig: &PeriodConfig{IndexTables: IndexPeriodicTableConfig{
-				PeriodicTableConfig: PeriodicTableConfig{
-					Prefix: "index_",
-					Period: 24 * time.Hour,
-				}}},
-		},
-		TableRange{
-			Start: 11,
-			End:   20,
-			PeriodConfig: &PeriodConfig{IndexTables: IndexPeriodicTableConfig{
-				PeriodicTableConfig: PeriodicTableConfig{
-					Prefix: "index_foo_",
-					Period: 24 * time.Hour,
-				}}},
-		},
-	}
-
-	for _, tc := range []struct {
-		tableNumber int64
-		tableName   string
-		expResp     bool
-		expError    error
-	}{
-		{
-			tableName: "index_1",
-			expResp:   true,
-		},
-		{
-			tableName: "index_foo_15",
-			expResp:   true,
-		},
-		// wrong prefix
-		{
-			tableName: "index_foo_5",
-		},
-		// wrong prefix
-		{
-			tableName: "index_15",
-		},
-		// invalid table name
-		{
-			tableName: "index_foo",
-			expError:  errInvalidTableName,
-		},
-	} {
-		t.Run(fmt.Sprintf("table %s", tc.tableName), func(t *testing.T) {
-			ok, err := tableRanges.TableInRange(tc.tableName)
-			require.Equal(t, tc.expResp, ok)
-
-			if tc.expError != nil {
-				require.ErrorIs(t, err, tc.expError)
-			} else {
-				require.NoError(t, err)
-			}
-		})
-	}
-}
-
 func TestTableRange_TableInRange(t *testing.T) {
 	tableRange := TableRange{
 		Start: 1,
@@ -961,4 +832,30 @@ func TestChunkKeys(t *testing.T) {
 			require.Equal(t, key, tc.schemaCfg.ExternalKey(newChunk.ChunkRef))
 		})
 	}
+}
+
+func TestSupportsIngestedAtForTime(t *testing.T) {
+	cfg := SchemaConfig{Configs: []PeriodConfig{
+		{
+			From:      DayTime{Time: model.TimeFromUnix(0)},
+			IndexType: types.IndexTypeTSDB,
+			Schema:    "v13",
+		},
+		{
+			From:      DayTime{Time: model.TimeFromUnix(1000)},
+			IndexType: types.IndexTypeTSDB,
+			Schema:    "v14",
+		},
+	}}
+
+	require.False(t, cfg.SupportsIngestedAtForTime(model.TimeFromUnix(500)), "v13 period must not support IngestedAt")
+	require.True(t, cfg.SupportsIngestedAtForTime(model.TimeFromUnix(2000)), "v14 period must support IngestedAt")
+	require.False(t, cfg.SupportsIngestedAtForTime(model.TimeFromUnix(-1000)), "time before any period must not support IngestedAt")
+
+	v12 := SchemaConfig{Configs: []PeriodConfig{{
+		From:      DayTime{Time: model.TimeFromUnix(0)},
+		IndexType: types.IndexTypeTSDB,
+		Schema:    "v12",
+	}}}
+	require.False(t, v12.SupportsIngestedAtForTime(model.TimeFromUnix(500)), "v12 period must not support IngestedAt")
 }

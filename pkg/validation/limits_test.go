@@ -3,6 +3,7 @@ package validation
 import (
 	"bytes"
 	"encoding/json"
+	"flag"
 	"fmt"
 	"reflect"
 	"testing"
@@ -76,8 +77,6 @@ ruler_max_rules_per_rule_group: 210
 ruler_max_rule_groups_per_tenant: 220
 ruler_remote_write_sigv4_config:
   region: us-east-1
-per_tenant_override_config: ""
-per_tenant_override_period: 230s
 query_timeout: 5m
 shard_streams:
   enabled: true
@@ -122,8 +121,6 @@ volume_max_series: 10001
   "ruler_remote_write_sigv4_config": {
     "region": "us-east-1"
   },
-  "per_tenant_override_config": "",
-  "per_tenant_override_period": "230s",
   "query_timeout": "5m",
   "shard_streams": {
     "desired_rate": "4mb",
@@ -177,9 +174,9 @@ func TestOverwriteMarshalingStringMapYAML(t *testing.T) {
 }
 
 func TestLimitsDoesNotMutate(t *testing.T) {
-	initialDefault := defaultLimits
+	initialDefault := defaultLimits.Load()
 	defer func() {
-		defaultLimits = initialDefault
+		defaultLimits.Store(initialDefault)
 	}()
 
 	defaultOTLPConfig := push.OTLPConfig{
@@ -586,7 +583,7 @@ func Test_PatternRateThreshold(t *testing.T) {
 	}{
 		{
 			name:     "when using default value",
-			yaml:     ``,
+			yaml:     `{}`,
 			expected: 1.0,
 		},
 		{
@@ -802,9 +799,9 @@ func TestPolicyShardStreams(t *testing.T) {
 }
 
 func TestOTLPConfig(t *testing.T) {
-	initialDefault := defaultLimits
+	initialDefault := defaultLimits.Load()
 	defer func() {
-		defaultLimits = initialDefault
+		defaultLimits.Store(initialDefault)
 	}()
 
 	for _, tc := range []struct {
@@ -1099,6 +1096,84 @@ otlp_config:
 			dec.KnownFields(true)
 			require.Nil(t, dec.Decode(&out))
 			require.Equal(t, tc.exp, out)
+		})
+	}
+}
+
+func TestDataObjCompaction_DefaultsFalse(t *testing.T) {
+	var defaults Limits
+	defaults.RegisterFlags(flag.NewFlagSet("test", flag.PanicOnError))
+
+	ov, err := NewOverrides(defaults, nil)
+	require.NoError(t, err)
+
+	runIndex, runLog := ov.CompactionPhases("tenant-29")
+	require.False(t, runIndex)
+	require.False(t, runLog)
+}
+
+func TestDataObjCompaction_IndexOnlyOverride(t *testing.T) {
+	var defaults Limits
+	defaults.RegisterFlags(flag.NewFlagSet("test", flag.PanicOnError))
+
+	tenantLimits := map[string]*Limits{
+		"tenant-29": {DataObjIndexCompactionEnabled: true},
+	}
+	ov, err := NewOverrides(defaults, newMockTenantLimits(tenantLimits))
+	require.NoError(t, err)
+
+	runIndex, runLog := ov.CompactionPhases("tenant-29")
+	require.True(t, runIndex, "index compaction runs")
+	require.False(t, runLog, "log compaction does not run when only index is enabled")
+
+	runIndex, runLog = ov.CompactionPhases("tenant-1")
+	require.False(t, runIndex)
+	require.False(t, runLog)
+}
+
+func TestDataObjCompaction_LogImpliesIndex(t *testing.T) {
+	var defaults Limits
+	defaults.RegisterFlags(flag.NewFlagSet("test", flag.PanicOnError))
+
+	tenantLimits := map[string]*Limits{
+		"tenant-29": {
+			DataObjIndexCompactionEnabled: true,
+			DataObjLogCompactionEnabled:   true,
+		},
+	}
+	ov, err := NewOverrides(defaults, newMockTenantLimits(tenantLimits))
+	require.NoError(t, err)
+
+	runIndex, runLog := ov.CompactionPhases("tenant-29")
+	require.True(t, runIndex, "log compaction implies index compaction")
+	require.True(t, runLog, "log compaction runs")
+}
+
+func TestDataObjCompaction_ValidateRejectsLogWithoutIndex(t *testing.T) {
+	var l Limits
+	l.RegisterFlags(flag.NewFlagSet("test", flag.PanicOnError))
+	l.DataObjLogCompactionEnabled = true
+	l.DataObjIndexCompactionEnabled = false
+	require.ErrorIs(t, l.Validate(), errLogCompactionRequiresIndex)
+}
+
+func TestDataObjCompaction_ValidateAcceptsValidCombinations(t *testing.T) {
+	// Build from RegisterFlags defaults so the other required Validate() fields
+	// (TSDBMaxBytesPerShard, EngineResultsCacheTimeBucketInterval, etc.) are
+	// already satisfied; toggle only the two compaction booleans.
+	combos := []struct{ index, log bool }{
+		{false, false},
+		{true, false},
+		{true, true},
+	}
+	for _, c := range combos {
+		t.Run(fmt.Sprintf("index=%v_log=%v", c.index, c.log), func(t *testing.T) {
+			var l Limits
+			l.RegisterFlags(flag.NewFlagSet("test", flag.PanicOnError))
+			l.DataObjIndexCompactionEnabled = c.index
+			l.DataObjLogCompactionEnabled = c.log
+			require.NotErrorIs(t, l.Validate(), errLogCompactionRequiresIndex,
+				"index=%v log=%v is a valid combination", c.index, c.log)
 		})
 	}
 }
