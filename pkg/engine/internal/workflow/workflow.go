@@ -17,13 +17,17 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"go.opentelemetry.io/otel"
-	"go.opentelemetry.io/otel/trace"
 
 	"github.com/grafana/loki/v3/pkg/engine/internal/executor"
 	"github.com/grafana/loki/v3/pkg/engine/internal/planner/physical"
 	"github.com/grafana/loki/v3/pkg/engine/internal/util/dag"
 	"github.com/grafana/loki/v3/pkg/logqlmodel/stats"
 	"github.com/grafana/loki/v3/pkg/xcap"
+)
+
+const (
+	eliminationReasonEmpty    = "empty"
+	eliminationReasonNonEmpty = "non_empty"
 )
 
 var (
@@ -34,16 +38,17 @@ var (
 		Help: "Total number of tasks preemptively canceled by short circuiting.",
 	})
 
-	eliminatedCachedTasksTotal = promauto.NewCounter(prometheus.CounterOpts{
+	eliminatedCachedTasksTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "loki_engine_v2_task_cached_eliminated_total",
-		Help: "Total number of tasks eliminated before execution because their cached result was empty.",
-	})
+		Help: "Total number of tasks eliminated before execution due to a cache hit.",
+	}, []string{"reason"})
 )
 
 // Options configures a [Workflow].
 type Options struct {
-	Tenant string   // Tenant ID associated with the workflow.
-	Actor  []string // Optional path to the actor that is generating the workflow.
+	ID     ulid.ULID // Optional ID for the workflow. One will be generated if not provided.
+	Tenant string    // Tenant ID associated with the workflow.
+	Actor  []string  // Optional path to the actor that is generating the workflow.
 
 	// MaxRunningScanTasks specifies the maximum number of scan tasks that may
 	// run concurrently within a single workflow. 0 means no limit.
@@ -52,6 +57,16 @@ type Options struct {
 	// MaxRunningOtherTasks specifies the maximum number of non-scan tasks that
 	// may run concurrently within a single workflow. 0 means no limit.
 	MaxRunningOtherTasks int
+
+	// MaxRunningCompactionTasks specifies the maximum number of compaction
+	// tasks that may run concurrently within a single workflow. 0 means no
+	// limit.
+	//
+	// The lane is dormant in query workflows (typeFor never classifies a
+	// query task as compaction); compactor workflows opt in by populating
+	// this field once the dataobj-compaction physical-plan node types and
+	// the corresponding typeFor classification land.
+	MaxRunningCompactionTasks int
 
 	// DebugTasks toggles debug messages for a task. This is very verbose and
 	// should only be enabled for debugging purposes.
@@ -84,14 +99,19 @@ type Options struct {
 	// result are eliminated at plan time before any work is dispatched.
 	PruneEmptyCachedTasks bool
 
-	// TaskPruningCacheFetchBatchSize is the maximum number of cache keys fetched per
-	// batch when pruning empty cached tasks at plan time. 0 means all keys
-	// are fetched in a single call per cache name.
-	TaskPruningCacheFetchBatchSize int
+	// NonEmptyCachedTasksMaxSize is the maximum total encoded size in bytes of
+	// non-empty cached task buffers that may be embedded in task assignments.
+	// Results that exceed the remaining budget are skipped; smaller results that
+	// still fit continue to be included. 0 disables non-empty task pruning entirely.
+	NonEmptyCachedTasksMaxSize uint64
 
 	// TaskCacheRegistry is the registry of cache backends used at plan time to
 	// prune tasks whose cached result is known to be empty.
 	TaskCacheRegistry executor.TaskCacheRegistry
+
+	// PruneCachedTasksFetchTimeout is the timeout applied to each cache Fetch
+	// call during task pruning at plan time. 0 means no timeout.
+	PruneCachedTasksFetchTimeout time.Duration
 }
 
 var _ fmt.Stringer = (*Workflow)(nil)
@@ -115,7 +135,7 @@ type Workflow struct {
 	capture      *xcap.Capture
 	parentRegion *xcap.Region
 
-	span trace.Span
+	span *xcap.Span
 
 	tasksMut   sync.RWMutex
 	taskStates map[*Task]TaskState
@@ -131,15 +151,16 @@ type Workflow struct {
 // cannot be partitioned into a Workflow.
 //
 // The provided Runner will be used for Workflow execution.
-func New(opts Options, logger log.Logger, runner Runner, plan *physical.Plan) (*Workflow, error) {
-	graph, err := planWorkflow(opts.Tenant, plan, cacheParams{
-		enabled:                 opts.CacheEnabled,
-		taskCacheMaxSizeBytes:   opts.MaxTaskCacheSize,
-		dataObjScanMaxSizeBytes: opts.MaxDataObjScanCacheSize,
-		compression:             opts.CacheCompression,
-		registry:                opts.TaskCacheRegistry,
-		pruneEmptyCachedTasks:   opts.PruneEmptyCachedTasks,
-		eliminationBatchSize:    opts.TaskPruningCacheFetchBatchSize,
+func New(ctx context.Context, opts Options, logger log.Logger, runner Runner, plan *physical.Plan) (*Workflow, error) {
+	graph, err := planWorkflow(ctx, opts.Tenant, plan, cacheParams{
+		enabled:                     opts.CacheEnabled,
+		taskCacheMaxSizeBytes:       opts.MaxTaskCacheSize,
+		dataObjScanMaxSizeBytes:     opts.MaxDataObjScanCacheSize,
+		compression:                 opts.CacheCompression,
+		registry:                    opts.TaskCacheRegistry,
+		pruneEmptyCachedTasks:       opts.PruneEmptyCachedTasks,
+		nonEmptyCachedTasksMaxBytes: opts.NonEmptyCachedTasksMaxSize,
+		pruneFetchTimeout:           opts.PruneCachedTasksFetchTimeout,
 	}, logger)
 	if err != nil {
 		return nil, err
@@ -175,7 +196,10 @@ func New(opts Options, logger log.Logger, runner Runner, plan *physical.Plan) (*
 		taskStates:   make(map[*Task]TaskState),
 		streamStates: make(map[*Stream]StreamState),
 	}
-	if err := wf.init(context.Background()); err != nil {
+	// Detach cancellation from the caller's ctx so a cancellation of the
+	// planning context does not abort the manifest registration, but keep
+	// the xcap region attached for observation recording.
+	if err := wf.init(context.WithoutCancel(ctx)); err != nil {
 		wf.Close()
 		return nil, err
 	}
@@ -210,8 +234,13 @@ func injectResultsStream(tenantID string, graph *dag.Graph[*Task]) (*Stream, err
 
 // init initializes the workflow.
 func (wf *Workflow) init(ctx context.Context) error {
+	id := wf.opts.ID
+	if id.IsZero() {
+		id = ulid.Make()
+	}
+
 	wf.manifest = &Manifest{
-		ID:     ulid.Make(),
+		ID:     id,
 		Tenant: wf.opts.Tenant,
 		Actor:  wf.opts.Actor,
 
@@ -309,6 +338,7 @@ func (wf *Workflow) dispatchTasks(ctx context.Context, tasks []*Task) error {
 	wf.admissionControl = newAdmissionControl(
 		int64(wf.opts.MaxRunningScanTasks),
 		int64(wf.opts.MaxRunningOtherTasks),
+		int64(wf.opts.MaxRunningCompactionTasks),
 	)
 
 	// this span captures the time spent waiting for all tasks to be admitted
@@ -324,9 +354,16 @@ func (wf *Workflow) dispatchTasks(ctx context.Context, tasks []*Task) error {
 	region.Record(xcap.StatTaskCount.Observe(int64(len(tasks))))
 
 	groups := wf.admissionControl.groupByType(tasks)
+	// taskTypeCompaction is appended last because the loop is sequential
+	// (each lane is fully drained before the next): a populated Compaction
+	// lane should never delay Scan dispatch. The lane is currently dormant
+	// — typeFor does not classify any task as compaction — so this slot is
+	// always empty for query workflows. It will be populated once the
+	// dataobj-compaction node types and typeFor classification land.
 	for _, taskType := range []taskType{
 		taskTypeOther,
 		taskTypeScan,
+		taskTypeCompaction,
 	} {
 		lane := wf.admissionControl.get(taskType)
 		tasks := groups[taskType]
@@ -344,7 +381,8 @@ func (wf *Workflow) dispatchTasks(ctx context.Context, tasks []*Task) error {
 
 			region.Record(xcap.StatTaskAdmissionWaitDuration.Observe(time.Since(start).Seconds()))
 
-			if err := wf.runner.Start(ctx, tasks[offset:offset+batchSize]...); err != nil {
+			batch := tasks[offset : offset+batchSize]
+			if err := wf.runner.Start(ctx, batch...); err != nil {
 				return fmt.Errorf("failed to start tasks: %w", err)
 			}
 		}
@@ -492,6 +530,9 @@ func (wf *Workflow) handleTerminalStateChange(ctx context.Context, task *Task, o
 	wf.tasksMut.RUnlock()
 
 	wf.cancelTasks(ctx, tasksToCancel)
+
+	// Print the summary at the very end to track full end-to-end task time.
+	wf.printTaskSummary(task, oldState, newStatus)
 }
 
 func (wf *Workflow) handleNonTerminalStateChange(ctx context.Context, task *Task, newStatus TaskStatus) {
@@ -544,18 +585,7 @@ func (wf *Workflow) mergeCapture(capture *xcap.Capture) {
 	wf.captureMut.Lock()
 	defer wf.captureMut.Unlock()
 
-	if wf.capture == nil || capture == nil {
-		return
-	}
-
-	if wf.parentRegion != nil {
-		capture.LinkParent(wf.parentRegion)
-	}
-
-	// Merge all regions from the task's capture into the workflow's capture.
-	for _, region := range capture.Regions() {
-		wf.capture.AddRegion(region)
-	}
+	wf.capture.Merge(wf.parentRegion, capture)
 }
 
 func (wf *Workflow) mergeResults(results stats.Result) {
@@ -566,8 +596,6 @@ func (wf *Workflow) mergeResults(results stats.Result) {
 }
 
 type wrappedPipeline struct {
-	initOnce sync.Once
-
 	inner   executor.Pipeline
 	onClose func()
 }
