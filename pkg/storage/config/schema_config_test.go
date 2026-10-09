@@ -38,20 +38,7 @@ func TestSchemaConfig_Validate(t *testing.T) {
 			},
 			err: errInvalidTablePeriod,
 		},
-		"should fail on chunk table period not multiple of 24h for schema v10": {
-			config: &SchemaConfig{
-				Configs: []PeriodConfig{
-					{
-						Schema: "v10",
-						IndexTables: IndexPeriodicTableConfig{
-							PeriodicTableConfig: PeriodicTableConfig{Period: 24 * time.Hour}},
-						ChunkTables: PeriodicTableConfig{Period: 6 * time.Hour},
-					},
-				},
-			},
-			err: errInvalidTablePeriod,
-		},
-		"should pass on index and chunk table period multiple of 24h for schema v10": {
+		"should pass on index table period multiple of 24h for schema v10": {
 			config: &SchemaConfig{
 				Configs: []PeriodConfig{
 					{
@@ -60,88 +47,39 @@ func TestSchemaConfig_Validate(t *testing.T) {
 							PathPrefix:          "index/",
 							PeriodicTableConfig: PeriodicTableConfig{Period: 24 * time.Hour},
 						},
-						ChunkTables: PeriodicTableConfig{Period: 24 * time.Hour},
 					},
 				},
 			},
 			expected: &SchemaConfig{
 				Configs: []PeriodConfig{
 					{
-						Schema:    "v10",
-						RowShards: 16,
+						Schema: "v10",
 						IndexTables: IndexPeriodicTableConfig{
 							PathPrefix:          "index/",
 							PeriodicTableConfig: PeriodicTableConfig{Period: 24 * time.Hour},
 						},
-						ChunkTables: PeriodicTableConfig{Period: 24 * time.Hour},
 					},
 				},
 			},
 			err: nil,
 		},
-		"should pass on index and chunk table period set to zero (no period tables)": {
+		"should pass on index table period set to zero (no period tables)": {
 			config: &SchemaConfig{
 				Configs: []PeriodConfig{
 					{
 						Schema: "v10",
 						IndexTables: IndexPeriodicTableConfig{
 							PeriodicTableConfig: PeriodicTableConfig{Period: 0}},
-						ChunkTables: PeriodicTableConfig{Period: 0},
 					},
 				},
 			},
 			expected: &SchemaConfig{
-				Configs: []PeriodConfig{
-					{
-						Schema:    "v10",
-						RowShards: 16,
-						IndexTables: IndexPeriodicTableConfig{
-							PathPrefix:          "index/",
-							PeriodicTableConfig: PeriodicTableConfig{Period: 0},
-						},
-						ChunkTables: PeriodicTableConfig{Period: 0},
-					},
-				},
-			},
-			err: nil,
-		},
-		"should set shard factor defaults": {
-			config: &SchemaConfig{
 				Configs: []PeriodConfig{
 					{
 						Schema: "v10",
-					},
-				},
-			},
-			expected: &SchemaConfig{
-				Configs: []PeriodConfig{
-					{
-						Schema:    "v10",
-						RowShards: 16,
 						IndexTables: IndexPeriodicTableConfig{
-							PathPrefix: "index/",
-						},
-					},
-				},
-			},
-			err: nil,
-		},
-		"should not override explicit shard factor": {
-			config: &SchemaConfig{
-				Configs: []PeriodConfig{
-					{
-						Schema:    "v11",
-						RowShards: 6,
-					},
-				},
-			},
-			expected: &SchemaConfig{
-				Configs: []PeriodConfig{
-					{
-						Schema:    "v11",
-						RowShards: 6,
-						IndexTables: IndexPeriodicTableConfig{
-							PathPrefix: "index/",
+							PathPrefix:          "index/",
+							PeriodicTableConfig: PeriodicTableConfig{Period: 0},
 						},
 					},
 				},
@@ -219,7 +157,6 @@ func TestPeriodConfig_Validate(t *testing.T) {
 					PathPrefix:          "index/",
 					PeriodicTableConfig: PeriodicTableConfig{Period: 0},
 				},
-				ChunkTables: PeriodicTableConfig{Period: 0},
 			},
 		},
 		{
@@ -230,80 +167,57 @@ func TestPeriodConfig_Validate(t *testing.T) {
 					PathPrefix:          "index/",
 					PeriodicTableConfig: PeriodicTableConfig{Period: 0},
 				},
-				ChunkTables: PeriodicTableConfig{Period: 0},
 			},
 			err: "invalid schema version",
 		},
 		{
-			desc: "v10 with shard factor",
-			in: PeriodConfig{
-				Schema:    "v10",
-				RowShards: 16,
-				IndexTables: IndexPeriodicTableConfig{
-					PathPrefix:          "index/",
-					PeriodicTableConfig: PeriodicTableConfig{Period: 0},
-				},
-				ChunkTables: PeriodicTableConfig{Period: 0},
-			},
-		},
-		{
-			desc: "v11 with shard factor",
-			in: PeriodConfig{
-				Schema:    "v11",
-				RowShards: 16,
-				IndexTables: IndexPeriodicTableConfig{
-					PathPrefix:          "index/",
-					PeriodicTableConfig: PeriodicTableConfig{Period: 0},
-				},
-				ChunkTables: PeriodicTableConfig{Period: 0},
-			},
-		},
-		{
-			desc: "error v10 no specified shard factor",
+			desc: "v10",
 			in: PeriodConfig{
 				Schema: "v10",
 				IndexTables: IndexPeriodicTableConfig{
 					PathPrefix:          "index/",
 					PeriodicTableConfig: PeriodicTableConfig{Period: 0},
 				},
-				ChunkTables: PeriodicTableConfig{Period: 0},
 			},
-			err: "must have row_shards > 0 (current: 0) for schema (v10)",
 		},
 		{
-			desc: "v12",
+			desc: "v11",
 			in: PeriodConfig{
-				Schema:    "v12",
-				RowShards: 16,
+				Schema: "v11",
 				IndexTables: IndexPeriodicTableConfig{
 					PathPrefix:          "index/",
 					PeriodicTableConfig: PeriodicTableConfig{Period: 0},
 				},
-				ChunkTables: PeriodicTableConfig{Period: 0},
+			},
+		},
+		{
+			desc: "v12",
+			in: PeriodConfig{
+				Schema: "v12",
+				IndexTables: IndexPeriodicTableConfig{
+					PathPrefix:          "index/",
+					PeriodicTableConfig: PeriodicTableConfig{Period: 0},
+				},
 			},
 		},
 		{
 			desc: "v13",
 			in: PeriodConfig{
-				Schema:    "v13",
-				RowShards: 16,
+				Schema: "v13",
 				IndexTables: IndexPeriodicTableConfig{
 					PathPrefix:          "index/",
 					PeriodicTableConfig: PeriodicTableConfig{Period: 0},
 				},
-				ChunkTables: PeriodicTableConfig{Period: 0},
 			},
 		},
 		{
 			desc: "v14",
 			in: PeriodConfig{
-				Schema:    "v14",
-				RowShards: 16,
+				Schema: "v14",
 				IndexTables: IndexPeriodicTableConfig{
 					PathPrefix:          "index/",
 					PeriodicTableConfig: PeriodicTableConfig{Period: 0},
 				},
-				ChunkTables: PeriodicTableConfig{Period: 0},
 			},
 		},
 	} {
@@ -355,8 +269,6 @@ func TestIndexPeriodicTableConfigCustomUnmarshalling(t *testing.T) {
 	yamlFile := `path_prefix: loki_index/
 prefix: cortex_
 period: 1w
-tags:
-    foo: bar
 `
 
 	cfg := IndexPeriodicTableConfig{}
@@ -368,9 +280,6 @@ tags:
 		PeriodicTableConfig: PeriodicTableConfig{
 			Prefix: "cortex_",
 			Period: 7 * 24 * time.Hour,
-			Tags: map[string]string{
-				"foo": "bar",
-			},
 		},
 	}
 
@@ -385,8 +294,6 @@ tags:
 func TestPeriodicTableConfigCustomUnmarshalling(t *testing.T) {
 	yamlFile := `prefix: cortex_
 period: 1w
-tags:
-    foo: bar
 `
 
 	cfg := PeriodicTableConfig{}
@@ -396,9 +303,6 @@ tags:
 	expectedCfg := PeriodicTableConfig{
 		Prefix: "cortex_",
 		Period: 7 * 24 * time.Hour,
-		Tags: map[string]string{
-			"foo": "bar",
-		},
 	}
 
 	require.Equal(t, expectedCfg, cfg)
@@ -420,9 +324,7 @@ func TestSchemaForTime(t *testing.T) {
 				PeriodicTableConfig: PeriodicTableConfig{
 					Prefix: "index_",
 					Period: 604800000000000,
-					Tags:   nil,
 				}},
-			RowShards: 16,
 		},
 		{
 			From:       DayTime{Time: 1564444800000},
@@ -433,9 +335,7 @@ func TestSchemaForTime(t *testing.T) {
 				PeriodicTableConfig: PeriodicTableConfig{
 					Prefix: "index_",
 					Period: 604800000000000,
-					Tags:   nil,
 				}},
-			RowShards: 32,
 		},
 	}}
 
@@ -485,9 +385,8 @@ func TestVersionAsInt(t *testing.T) {
 			schemaCfg: SchemaConfig{
 				Configs: []PeriodConfig{
 					{
-						From:      DayTime{Time: 0},
-						Schema:    "v12",
-						RowShards: 16,
+						From:   DayTime{Time: 0},
+						Schema: "v12",
 					},
 				},
 			},
@@ -498,9 +397,8 @@ func TestVersionAsInt(t *testing.T) {
 			schemaCfg: SchemaConfig{
 				Configs: []PeriodConfig{
 					{
-						From:      DayTime{Time: 0},
-						Schema:    "v13",
-						RowShards: 16,
+						From:   DayTime{Time: 0},
+						Schema: "v13",
 					},
 				},
 			},
@@ -511,9 +409,8 @@ func TestVersionAsInt(t *testing.T) {
 			schemaCfg: SchemaConfig{
 				Configs: []PeriodConfig{
 					{
-						From:      DayTime{Time: 0},
-						Schema:    "v14",
-						RowShards: 16,
+						From:   DayTime{Time: 0},
+						Schema: "v14",
 					},
 				},
 			},
@@ -570,7 +467,7 @@ func TestPeriodConfigFormatMappings(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			cfg := PeriodConfig{Schema: tc.schema, RowShards: 16}
+			cfg := PeriodConfig{Schema: tc.schema}
 
 			chunkFmt, headFmt, err := cfg.ChunkFormat()
 			require.NoError(t, err)
@@ -741,7 +638,6 @@ func TestGetIndexStoreTableRanges(t *testing.T) {
 						Prefix: "index_",
 						Period: time.Hour * 24,
 					}},
-				RowShards: 2,
 			},
 			{
 				From:       DayTime{Time: now.Add(5 * 24 * time.Hour)},
@@ -753,7 +649,6 @@ func TestGetIndexStoreTableRanges(t *testing.T) {
 						Prefix: "index_",
 						Period: time.Hour * 24,
 					}},
-				RowShards: 2,
 			},
 		},
 	}
@@ -795,9 +690,8 @@ func TestChunkKeys(t *testing.T) {
 			schemaCfg: SchemaConfig{
 				Configs: []PeriodConfig{
 					{
-						From:      DayTime{Time: 0},
-						Schema:    "v11",
-						RowShards: 16,
+						From:   DayTime{Time: 0},
+						Schema: "v11",
 					},
 				},
 			},
@@ -816,9 +710,8 @@ func TestChunkKeys(t *testing.T) {
 			schemaCfg: SchemaConfig{
 				Configs: []PeriodConfig{
 					{
-						From:      DayTime{Time: 0},
-						Schema:    "v12",
-						RowShards: 16,
+						From:   DayTime{Time: 0},
+						Schema: "v12",
 					},
 				},
 			},
