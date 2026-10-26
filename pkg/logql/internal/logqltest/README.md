@@ -1,10 +1,10 @@
 # LogQL declarative test scripts syntax
 
 The `testdata/*.logqltest` scripts alongside this package are declarative correctness tests for LogQL
-**metric** queries. Each `.logqltest` file loads some log streams and evaluates queries against
-absolute, hand-specified expected results. Scripts are run by `TestLogQLScripts` through the real
-`logql.Engine` over a filesystem-backed chunk store (TSDB index), so the full storage read path and
-parsing/extraction pipeline are exercised end to end.
+**metric and log-selection** queries. Each `.logqltest` file loads some log streams and evaluates
+queries against absolute, hand-specified expected results. Scripts are run by `TestLogQLScripts`
+through the real `logql.Engine` over a filesystem-backed chunk store (TSDB index), so the full
+storage read path and parsing/extraction pipeline are exercised end to end.
 
 The format is adapted from Prometheus' [`promqltest`](https://github.com/prometheus/prometheus/tree/main/promql/promqltest)
 DSL.
@@ -49,7 +49,9 @@ load
 
 ### `eval`
 
-Evaluates a metric query and checks its result.
+Evaluates a query and checks its result. `instant`/`range` are for a metric query (results of
+type vector/scalar/matrix); `select` is for a log-selection query (results of type streams — see
+"Log-selection window" below), which has no notion of a step.
 
 ```
 eval instant at <time> <logql>
@@ -57,9 +59,15 @@ eval instant at <time> <logql>
 
 eval range from <t0> to <t1> step <step> <logql>
   <expected series...>
+
+eval select from <t0> to <t1> <forward|backward> <logql>
+  <expected streams...>
 ```
 
 - Times (`<time>`, `<t0>`, `<t1>`, `<step>`) are Go durations offset from the script epoch.
+- `forward` / `backward` — **required** on `select`, and `select` only: the order log lines are
+  returned in, which is the order the expected block is written in (see "Log-selection direction"
+  below).
 - Expected results follow on indented lines. The block ends at a blank line, a dedented line,
   or EOF.
 
@@ -69,6 +77,11 @@ eval range from <t0> to <t1> step <step> <logql>
 - **Scalar** (e.g. `1 + 2`): a single line with just the number.
 - **Matrix** (range queries): one line per series, `{labels} <p0> <p1> …`, one point per step
   from `<t0>` to `<t1>`. Use `_` for a step with no point.
+- **Streams** (log-selection queries, e.g. `{app="foo"} |= "bar"`): one line per log entry,
+  `{labels} "<line>" @ <ts>` (or `` `<line>` `` for a raw line). Several lines sharing the same
+  `{labels}` belong to one stream and are checked as an exact, ordered sequence — a stream's line
+  order is meaningful (it follows the query direction), unlike the set of series in a
+  vector/matrix. Distinct label sets are compared as a set (order-independent), like series.
 
 Point syntax (from promqltest):
 
@@ -86,14 +99,51 @@ An **empty-value label is significant**: `{app="a", age=""}` asserts that `age` 
 empty value (e.g. from a `json` expression whose path is missing, or `logfmt --keep-empty`), which is
 distinct from omitting `age` entirely.
 
-Every `eval` must assert exactly one kind of result — series, a scalar, `expect empty`, or
-`expect fail`; otherwise the harness errors (a forgotten expected block would otherwise pass
-vacuously on an empty result).
+Every `eval` must assert exactly one kind of result — series, log streams, a scalar,
+`expect empty`, or `expect fail`; otherwise the harness errors (a forgotten expected block would
+otherwise pass vacuously on an empty result).
+
+### Log-selection window
+
+A log-selection query's window is **start-inclusive, end-exclusive**: `[t0, t1)` for
+`eval select`, and `[T−30s, T)` for `eval instant at T` (a fixed 30s look-back). This is the
+opposite of a metric range vector's `(start, end]` — a line exactly at `t1` (or at the instant
+`T`) falls **outside** the window:
+
+```
+load
+  {app="foo"} "in range"    @ 10s
+  {app="foo"} "at boundary" @ 20s
+
+eval select from 0 to 20s forward {app="foo"}
+  {app="foo"} "in range" @ 10s
+```
+
+### Log-selection direction
+
+Every `eval select` states its direction between the window and the query: `forward` reads the
+window oldest line first, `backward` newest line first.
+
+```
+load
+  {app="foo"} "1st" @ 10s
+  {app="foo"} "2nd" @ 20s
+
+eval select from 0 to 30s backward {app="foo"}
+  {app="foo"} "2nd" @ 20s
+  {app="foo"} "1st" @ 10s
+```
+
+The direction only changes the order lines come back in, never which lines match: the window
+bounds and the pipeline are unaffected. Expected lines within one stream are compared in the order
+they are written, so a `backward` block lists them newest first. Streams themselves are still
+compared as a set, and each is ordered independently.
+
 
 ### Empty results
 
-To assert that a query returns no series — e.g. `absent_over_time` over present data, or a
-comparison whose sides never match — use `expect empty`:
+To assert that a query returns no series or streams — e.g. `absent_over_time` over present data,
+a comparison whose sides never match, or a selector matching no stream — use `expect empty`:
 
 ```
 eval instant at 60s count_over_time({app="missing"}[1m])
@@ -126,21 +176,43 @@ eval instant at 60s sort(count_over_time({app=~"a|b"}[1m]))
 
 `expect ordered` is instant-only; use distinct, non-`NaN` values so the order is unambiguous.
 
-### Skipping value comparison on one stack
+### Relaxing or skipping value comparison on one stack
 
-Every query runs on multiple [execution stacks](#execution-stacks). When one stack returns values that
-legitimately differ skip its value check while keeping every other stack exact:
+Every query runs on multiple [execution stacks](#execution-stacks). Loosen the comparison, or skip
+it, when one stack legitimately returns different values. Keep every other stack exact.
+
+`expect values-toleration <epsilon> on "<stack>"` compares values on the named stack, but with
+`<epsilon>` in place of the default `1e-9` tolerance. Use this when a stack's result is
+approximate, but the query still exercises a real assertion — e.g. a sharded query whose value goes
+through a probabilistic sketch:
 
 ```
 eval instant at 60s quantile_over_time(0.5, {app="a"} | logfmt | unwrap v [1m]) by (pod)
-  skip values-comparison on "query-frontend + query-scheduler (sharding)"
+  expect values-toleration 0.02 on "query-frontend + query-scheduler (sharding)"
   {pod="1"} 3
   {pod="2"} 15
 ```
 
+- `<epsilon>` is a plain positive, finite number, the same dual absolute/relative bound the
+  default `1e-9` uses: a match if the absolute difference is within `<epsilon>`, or the
+  difference relative to the larger magnitude is.
+- May repeat for multiple stacks, one directive per stack.
+
+`skip values-comparison on "<stack>"` drops the value check entirely for the named stack:
+
+```
+eval instant at 60s some_query_with_a_nondeterministic_value({app="a"}[1m])
+  skip values-comparison on "query-frontend + query-scheduler (sharding)"
+  {app="a"} 3
+```
+
 - `<stack>` is the exact stack name, in double quotes.
-- The named stack still runs the query, must not error, and is still checked for series count,
-  sample count, and timestamps. Only the float value comparison is skipped.
+- The named stack still runs the query, must not error, and is still checked for series/stream
+  count, sample/line count, and timestamps. Only the float value comparison (or, for a
+  log-selection query, the log line text) is skipped.
+
+A stack can have `skip values-comparison` or `expect values-toleration`, not both — they're
+contradictory ("don't compare" vs. "compare, loosely").
 
 ## Execution stacks
 
@@ -163,9 +235,17 @@ eval instant at 60s sum by (app) (count_over_time({app=~"foo|bar"}[1m]))
 
 eval range from 0 to 60s step 30s count_over_time({app="foo"}[30s])
   {app="foo"} _ 3 3
+
+eval select from 0 to 60s forward {app="foo"} |= "status=200"
+  {app="foo"} "level=info status=200" @ 10s
+  {app="foo"} "level=info status=200" @ 20s
+  {app="foo"} "level=info status=200" @ 30s
+  {app="foo"} "level=info status=200" @ 40s
+  {app="foo"} "level=info status=200" @ 50s
 ```
 
 ## Scope
 
-Metric queries only (results of type vector / scalar / matrix). Log queries (streams) are not
-yet supported.
+Metric queries (results of type vector / scalar / matrix) and log-selection queries (results of
+type streams — a stream selector with optional line/label filters, parsers, and formatters).
+Tailing and `expect ordered` for streams are not yet supported.
